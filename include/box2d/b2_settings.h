@@ -67,7 +67,7 @@ typedef unsigned int uint32;
 /// This is used to fatten AABBs in the dynamic tree. This is used to predict
 /// the future position based on the current displacement.
 /// This is a dimensionless multiplier.
-#define b2_aabbMultiplier		2.0f
+#define b2_aabbMultiplier		4.0f
 
 /// A small length used as a collision and constraint tolerance. Usually it is
 /// chosen to be numerically significant, but visually insignificant.
@@ -117,7 +117,7 @@ typedef unsigned int uint32;
 /// that overlap is removed in one time step. However using values close to 1 often lead
 /// to overshoot.
 #define b2_baumgarte				0.2f
-#define b2_toiBaugarte				0.75f
+#define b2_toiBaumgarte				0.75f
 
 
 // Sleep

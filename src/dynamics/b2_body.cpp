@@ -26,6 +26,8 @@
 #include "box2d/b2_joint.h"
 #include "box2d/b2_world.h"
 
+#include <new>
+
 b2Body::b2Body(const b2BodyDef* bd, b2World* world)
 {
 	b2Assert(bd->position.IsValid());
@@ -53,9 +55,9 @@ b2Body::b2Body(const b2BodyDef* bd, b2World* world)
 	{
 		m_flags |= e_awakeFlag;
 	}
-	if (bd->active)
+	if (bd->enabled)
 	{
-		m_flags |= e_activeFlag;
+		m_flags |= e_enabledFlag;
 	}
 
 	m_world = world;
@@ -89,16 +91,8 @@ b2Body::b2Body(const b2BodyDef* bd, b2World* world)
 
 	m_type = bd->type;
 
-	if (m_type == b2_dynamicBody)
-	{
-		m_mass = 1.0f;
-		m_invMass = 1.0f;
-	}
-	else
-	{
-		m_mass = 0.0f;
-		m_invMass = 0.0f;
-	}
+	m_mass = 0.0f;
+	m_invMass = 0.0f;
 
 	m_I = 0.0f;
 	m_invI = 0.0f;
@@ -181,7 +175,7 @@ b2Fixture* b2Body::CreateFixture(const b2FixtureDef* def)
 	b2Fixture* fixture = new (memory) b2Fixture;
 	fixture->Create(allocator, this, def);
 
-	if (m_flags & e_activeFlag)
+	if (m_flags & e_enabledFlag)
 	{
 		b2BroadPhase* broadPhase = &m_world->m_contactManager.m_broadPhase;
 		fixture->CreateProxies(broadPhase, m_xf);
@@ -201,7 +195,7 @@ b2Fixture* b2Body::CreateFixture(const b2FixtureDef* def)
 
 	// Let the world know we have a new fixture. This will cause new contacts
 	// to be created at the beginning of the next time step.
-	m_world->m_flags |= b2World::e_newFixture;
+	m_world->m_newContacts = true;
 
 	return fixture;
 }
@@ -269,7 +263,7 @@ void b2Body::DestroyFixture(b2Fixture* fixture)
 
 	b2BlockAllocator* allocator = &m_world->m_blockAllocator;
 
-	if (m_flags & e_activeFlag)
+	if (m_flags & e_enabledFlag)
 	{
 		b2BroadPhase* broadPhase = &m_world->m_contactManager.m_broadPhase;
 		fixture->DestroyProxies(broadPhase);
@@ -328,12 +322,6 @@ void b2Body::ResetMassData()
 	{
 		m_invMass = 1.0f / m_mass;
 		localCenter *= m_invMass;
-	}
-	else
-	{
-		// Force all dynamic bodies to have a positive mass.
-		m_mass = 1.0f;
-		m_invMass = 1.0f;
 	}
 
 	if (m_I > 0.0f && (m_flags & e_fixedRotationFlag) == 0)
@@ -449,29 +437,40 @@ void b2Body::SetTransform(const b2Vec2& position, float angle)
 
 void b2Body::SynchronizeFixtures()
 {
-	b2Transform xf1;
-	xf1.q.Set(m_sweep.a0);
-	xf1.p = m_sweep.c0 - b2Mul(xf1.q, m_sweep.localCenter);
-
 	b2BroadPhase* broadPhase = &m_world->m_contactManager.m_broadPhase;
-	for (b2Fixture* f = m_fixtureList; f; f = f->m_next)
+
+	if (m_flags & b2Body::e_awakeFlag)
 	{
-		f->Synchronize(broadPhase, xf1, m_xf);
+		b2Transform xf1;
+		xf1.q.Set(m_sweep.a0);
+		xf1.p = m_sweep.c0 - b2Mul(xf1.q, m_sweep.localCenter);
+
+		for (b2Fixture* f = m_fixtureList; f; f = f->m_next)
+		{
+			f->Synchronize(broadPhase, xf1, m_xf);
+		}
+	}
+	else
+	{
+		for (b2Fixture* f = m_fixtureList; f; f = f->m_next)
+		{
+			f->Synchronize(broadPhase, m_xf, m_xf);
+		}
 	}
 }
 
-void b2Body::SetActive(bool flag)
+void b2Body::SetEnabled(bool flag)
 {
 	b2Assert(m_world->IsLocked() == false);
 
-	if (flag == IsActive())
+	if (flag == IsEnabled())
 	{
 		return;
 	}
 
 	if (flag)
 	{
-		m_flags |= e_activeFlag;
+		m_flags |= e_enabledFlag;
 
 		// Create all proxies.
 		b2BroadPhase* broadPhase = &m_world->m_contactManager.m_broadPhase;
@@ -480,11 +479,12 @@ void b2Body::SetActive(bool flag)
 			f->CreateProxies(broadPhase, m_xf);
 		}
 
-		// Contacts are created the next time step.
+		// Contacts are created at the beginning of the next
+		m_world->m_newContacts = true;
 	}
 	else
 	{
-		m_flags &= ~e_activeFlag;
+		m_flags &= ~e_enabledFlag;
 
 		// Destroy all proxies.
 		b2BroadPhase* broadPhase = &m_world->m_contactManager.m_broadPhase;
@@ -544,7 +544,7 @@ void b2Body::Dump()
 	b2Log("  bd.awake = bool(%d);\n", m_flags & e_awakeFlag);
 	b2Log("  bd.fixedRotation = bool(%d);\n", m_flags & e_fixedRotationFlag);
 	b2Log("  bd.bullet = bool(%d);\n", m_flags & e_bulletFlag);
-	b2Log("  bd.active = bool(%d);\n", m_flags & e_activeFlag);
+	b2Log("  bd.enabled = bool(%d);\n", m_flags & e_enabledFlag);
 	b2Log("  bd.gravityScale = %.15lef;\n", m_gravityScale);
 	b2Log("  bodies[%d] = m_world->CreateBody(&bd);\n", m_islandIndex);
 	b2Log("\n");

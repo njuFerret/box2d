@@ -1,6 +1,4 @@
-project(samples LANGUAGES CXX)
-
-set (SAMPLE_SOURCE_FILES
+set (TESTBED_SOURCE_FILES
 	draw.cpp
 	draw.h
 	imgui_impl_glfw.cpp
@@ -13,7 +11,7 @@ set (SAMPLE_SOURCE_FILES
 	test.cpp
 	test.h
 	tests/add_pair.cpp
-	tests/apply_forces.cpp
+	tests/apply_force.cpp
 	tests/body_types.cpp
 	tests/box_stack.cpp
 	tests/breakable.cpp
@@ -68,34 +66,26 @@ set (SAMPLE_SOURCE_FILES
 	tests/tiles.cpp
 	tests/time_of_impact.cpp
 	tests/tumbler.cpp
+	tests/wheel_joint.cpp
 )
 
-set (SAMPLE_RESOURCE_FILES
-    data/DroidSans.ttf
-)
-
-add_executable(samples ${SAMPLE_SOURCE_FILES} ${SAMPLE_RESOURCE_FILES})
-target_include_directories(samples PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(samples PUBLIC box2d glfw imgui sajson glad)
-set_target_properties(samples PROPERTIES
+add_executable(testbed ${TESTBED_SOURCE_FILES})
+target_include_directories(testbed PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(testbed PUBLIC box2d glfw imgui sajson glad)
+set_target_properties(testbed PROPERTIES
 	CXX_STANDARD 11
     CXX_STANDARD_REQUIRED YES
     CXX_EXTENSIONS NO
 )
-if(APPLE)
-	set_target_properties(samples PROPERTIES
-        MACOSX_BUNDLE_INFO_PLIST            "${CMAKE_CURRENT_SOURCE_DIR}/MacOSXBundleInfo.plist.in"
-		MACOSX_BUNDLE						TRUE
-        MACOSX_BUNDLE_BUNDLE_NAME           "Samples"
-        MACOSX_BUNDLE_GUI_IDENTIFIER        "org.box2d.samples"
-    )
 
-	# Reflect resources directory tree inside bundle
-	foreach (SAMPLE_RESOURCE_FILE ${SAMPLE_RESOURCE_FILES})
-		get_filename_component(SAMPLE_RESOURCE_DIR ${SAMPLE_RESOURCE_FILE} DIRECTORY)
-		set_source_files_properties(${SAMPLE_RESOURCE_FILE} PROPERTIES
-			MACOSX_PACKAGE_LOCATION Resources/${SAMPLE_RESOURCE_DIR}
-		)
-	endforeach()
-endif()
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${SAMPLE_SOURCE_FILES} ${SAMPLE_RESOURCE_FILES})
+# message(STATUS "runtime = ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+# message(STATUS "binary = ${CMAKE_CURRENT_BINARY_DIR}")
+
+# Copy font files, etc
+add_custom_command(
+        TARGET testbed POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_CURRENT_SOURCE_DIR}/data/
+                ${CMAKE_CURRENT_BINARY_DIR}/data/)
+
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${TESTBED_SOURCE_FILES})

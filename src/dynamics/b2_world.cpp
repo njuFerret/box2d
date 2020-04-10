@@ -60,7 +60,9 @@ b2World::b2World(const b2Vec2& gravity)
 	m_allowSleep = true;
 	m_gravity = gravity;
 
-	m_flags = e_clearForces;
+	m_newContacts = false;
+	m_locked = false;
+	m_clearForces = true;
 
 	m_inv_dt0 = 0.0f;
 
@@ -426,7 +428,7 @@ void b2World::Solve(const b2TimeStep& step)
 			continue;
 		}
 
-		if (seed->IsAwake() == false || seed->IsActive() == false)
+		if (seed->IsAwake() == false || seed->IsEnabled() == false)
 		{
 			continue;
 		}
@@ -448,7 +450,7 @@ void b2World::Solve(const b2TimeStep& step)
 		{
 			// Grab the next body off the stack and add it to the island.
 			b2Body* b = stack[--stackCount];
-			b2Assert(b->IsActive() == true);
+			b2Assert(b->IsEnabled() == true);
 			island.Add(b);
 
 			// Make sure the body is awake (without resetting sleep timer).
@@ -513,8 +515,8 @@ void b2World::Solve(const b2TimeStep& step)
 
 				b2Body* other = je->other;
 
-				// Don't simulate joints connected to inactive bodies.
-				if (other->IsActive() == false)
+				// Don't simulate joints connected to diabled bodies.
+				if (other->IsEnabled() == false)
 				{
 					continue;
 				}
@@ -905,13 +907,13 @@ void b2World::Step(float dt, int32 velocityIterations, int32 positionIterations)
 	b2Timer stepTimer;
 
 	// If new fixtures were added, we need to find the new contacts.
-	if (m_flags & e_newFixture)
+	if (m_newContacts)
 	{
 		m_contactManager.FindNewContacts();
-		m_flags &= ~e_newFixture;
+		m_newContacts = false;
 	}
 
-	m_flags |= e_locked;
+	m_locked = true;
 
 	b2TimeStep step;
 	step.dt = dt;
@@ -958,12 +960,12 @@ void b2World::Step(float dt, int32 velocityIterations, int32 positionIterations)
 		m_inv_dt0 = step.inv_dt;
 	}
 
-	if (m_flags & e_clearForces)
+	if (m_clearForces)
 	{
 		ClearForces();
 	}
 
-	m_flags &= ~e_locked;
+	m_locked = false;
 
 	m_profile.step = stepTimer.GetMilliseconds();
 }
@@ -1115,57 +1117,7 @@ void b2World::DrawShape(b2Fixture* fixture, const b2Transform& xf, const b2Color
 	}
 }
 
-void b2World::DrawJoint(b2Joint* joint)
-{
-	b2Body* bodyA = joint->GetBodyA();
-	b2Body* bodyB = joint->GetBodyB();
-	const b2Transform& xf1 = bodyA->GetTransform();
-	const b2Transform& xf2 = bodyB->GetTransform();
-	b2Vec2 x1 = xf1.p;
-	b2Vec2 x2 = xf2.p;
-	b2Vec2 p1 = joint->GetAnchorA();
-	b2Vec2 p2 = joint->GetAnchorB();
-
-	b2Color color(0.5f, 0.8f, 0.8f);
-
-	switch (joint->GetType())
-	{
-	case e_distanceJoint:
-		m_debugDraw->DrawSegment(p1, p2, color);
-		break;
-
-	case e_pulleyJoint:
-	{
-		b2PulleyJoint* pulley = (b2PulleyJoint*)joint;
-		b2Vec2 s1 = pulley->GetGroundAnchorA();
-		b2Vec2 s2 = pulley->GetGroundAnchorB();
-		m_debugDraw->DrawSegment(s1, p1, color);
-		m_debugDraw->DrawSegment(s2, p2, color);
-		m_debugDraw->DrawSegment(s1, s2, color);
-	}
-	break;
-
-	case e_mouseJoint:
-	{
-		b2Color c;
-		c.Set(0.0f, 1.0f, 0.0f);
-		m_debugDraw->DrawPoint(p1, 4.0f, c);
-		m_debugDraw->DrawPoint(p2, 4.0f, c);
-
-		c.Set(0.8f, 0.8f, 0.8f);
-		m_debugDraw->DrawSegment(p1, p2, c);
-
-	}
-	break;
-
-	default:
-		m_debugDraw->DrawSegment(x1, p1, color);
-		m_debugDraw->DrawSegment(p1, p2, color);
-		m_debugDraw->DrawSegment(x2, p2, color);
-	}
-}
-
-void b2World::DrawDebugData()
+void b2World::DebugDraw()
 {
 	if (m_debugDraw == nullptr)
 	{
@@ -1181,7 +1133,12 @@ void b2World::DrawDebugData()
 			const b2Transform& xf = b->GetTransform();
 			for (b2Fixture* f = b->GetFixtureList(); f; f = f->GetNext())
 			{
-				if (b->IsActive() == false)
+				if (b->GetType() == b2_dynamicBody && b->m_mass == 0.0f)
+				{
+					// Bad body
+					DrawShape(f, xf, b2Color(1.0f, 0.0f, 0.0f));
+				}
+				else if (b->IsEnabled() == false)
 				{
 					DrawShape(f, xf, b2Color(0.5f, 0.5f, 0.3f));
 				}
@@ -1209,7 +1166,7 @@ void b2World::DrawDebugData()
 	{
 		for (b2Joint* j = m_jointList; j; j = j->GetNext())
 		{
-			DrawJoint(j);
+			j->Draw(m_debugDraw);
 		}
 	}
 
@@ -1218,13 +1175,14 @@ void b2World::DrawDebugData()
 		b2Color color(0.3f, 0.9f, 0.9f);
 		for (b2Contact* c = m_contactManager.m_contactList; c; c = c->GetNext())
 		{
-			//b2Fixture* fixtureA = c->GetFixtureA();
-			//b2Fixture* fixtureB = c->GetFixtureB();
+			b2Fixture* fixtureA = c->GetFixtureA();
+			b2Fixture* fixtureB = c->GetFixtureB();
+			int32 indexA = c->GetChildIndexA();
+			int32 indexB = c->GetChildIndexB();
+			b2Vec2 cA = fixtureA->GetAABB(indexA).GetCenter();
+			b2Vec2 cB = fixtureB->GetAABB(indexB).GetCenter();
 
-			//b2Vec2 cA = fixtureA->GetAABB().GetCenter();
-			//b2Vec2 cB = fixtureB->GetAABB().GetCenter();
-
-			//g_debugDraw->DrawSegment(cA, cB, color);
+			m_debugDraw->DrawSegment(cA, cB, color);
 		}
 	}
 
@@ -1235,7 +1193,7 @@ void b2World::DrawDebugData()
 
 		for (b2Body* b = m_bodyList; b; b = b->GetNext())
 		{
-			if (b->IsActive() == false)
+			if (b->IsEnabled() == false)
 			{
 				continue;
 			}
@@ -1291,8 +1249,8 @@ float b2World::GetTreeQuality() const
 
 void b2World::ShiftOrigin(const b2Vec2& newOrigin)
 {
-	b2Assert((m_flags & e_locked) == 0);
-	if ((m_flags & e_locked) == e_locked)
+	b2Assert(m_locked == false);
+	if (m_locked)
 	{
 		return;
 	}
@@ -1314,7 +1272,7 @@ void b2World::ShiftOrigin(const b2Vec2& newOrigin)
 
 void b2World::Dump()
 {
-	if ((m_flags & e_locked) == e_locked)
+	if (m_locked)
 	{
 		return;
 	}

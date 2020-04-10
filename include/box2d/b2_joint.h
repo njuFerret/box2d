@@ -26,6 +26,7 @@
 #include "b2_math.h"
 
 class b2Body;
+class b2Draw;
 class b2Joint;
 struct b2SolverData;
 class b2BlockAllocator;
@@ -139,8 +140,8 @@ public:
 	/// Set the user data pointer.
 	void SetUserData(void* data);
 
-	/// Short-cut function to determine if either body is inactive.
-	bool IsActive() const;
+	/// Short-cut function to determine if either body is enabled.
+	bool IsEnabled() const;
 
 	/// Get collide connected.
 	/// Note: modifying the collide connect flag won't work correctly because
@@ -152,6 +153,9 @@ public:
 
 	/// Shift the origin for any points stored in world coordinates.
 	virtual void ShiftOrigin(const b2Vec2& newOrigin) { B2_NOT_USED(newOrigin);  }
+
+	/// Debug draw this joint
+	virtual void Draw(b2Draw* draw) const;
 
 protected:
 	friend class b2World;

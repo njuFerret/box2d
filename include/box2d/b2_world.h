@@ -66,7 +66,7 @@ public:
 	void SetContactListener(b2ContactListener* listener);
 
 	/// Register a routine for debug drawing. The debug draw functions are called
-	/// inside with b2World::DrawDebugData method. The debug draw object is owned
+	/// inside with b2World::DebugDraw method. The debug draw object is owned
 	/// by you and must remain in scope.
 	void SetDebugDraw(b2Draw* debugDraw);
 
@@ -109,7 +109,7 @@ public:
 	void ClearForces();
 
 	/// Call this to draw shapes and other debug draw data. This is intentionally non-const.
-	void DrawDebugData();
+	void DebugDraw();
 
 	/// Query the world for all fixtures that potentially overlap the
 	/// provided AABB.
@@ -215,14 +215,6 @@ public:
 
 private:
 
-	// m_flags
-	enum
-	{
-		e_newFixture	= 0x0001,
-		e_locked		= 0x0002,
-		e_clearForces	= 0x0004
-	};
-
 	friend class b2Body;
 	friend class b2Fixture;
 	friend class b2ContactManager;
@@ -231,13 +223,10 @@ private:
 	void Solve(const b2TimeStep& step);
 	void SolveTOI(const b2TimeStep& step);
 
-	void DrawJoint(b2Joint* joint);
 	void DrawShape(b2Fixture* shape, const b2Transform& xf, const b2Color& color);
 
 	b2BlockAllocator m_blockAllocator;
 	b2StackAllocator m_stackAllocator;
-
-	int32 m_flags;
 
 	b2ContactManager m_contactManager;
 
@@ -256,6 +245,10 @@ private:
 	// This is used to compute the time step ratio to
 	// support a variable time step.
 	float m_inv_dt0;
+
+	bool m_newContacts;
+	bool m_locked;
+	bool m_clearForces;
 
 	// These are for debugging the solver.
 	bool m_warmStarting;
@@ -324,25 +317,18 @@ inline b2Vec2 b2World::GetGravity() const
 
 inline bool b2World::IsLocked() const
 {
-	return (m_flags & e_locked) == e_locked;
+	return m_locked;
 }
 
 inline void b2World::SetAutoClearForces(bool flag)
 {
-	if (flag)
-	{
-		m_flags |= e_clearForces;
-	}
-	else
-	{
-		m_flags &= ~e_clearForces;
-	}
+	m_clearForces = flag;
 }
 
 /// Get the flag that controls automatic clearing of forces after each time step.
 inline bool b2World::GetAutoClearForces() const
 {
-	return (m_flags & e_clearForces) == e_clearForces;
+	return m_clearForces;
 }
 
 inline const b2ContactManager& b2World::GetContactManager() const
