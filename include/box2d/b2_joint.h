@@ -47,14 +47,6 @@ enum b2JointType
 	e_motorJoint
 };
 
-enum b2LimitState
-{
-	e_inactiveLimit,
-	e_atLowerLimit,
-	e_atUpperLimit,
-	e_equalLimits
-};
-
 struct b2Jacobian
 {
 	b2Vec2 linear;
@@ -103,6 +95,16 @@ struct b2JointDef
 	bool collideConnected;
 };
 
+/// Utility to compute linear stiffness values from frequency and damping ratio
+void b2LinearStiffness(float& stiffness, float& damping,
+	float frequencyHertz, float dampingRatio,
+	const b2Body* bodyA, const b2Body* bodyB);
+
+/// Utility to compute rotational stiffness values frequency and damping ratio
+void b2AngularStiffness(float& stiffness, float& damping,
+	float frequencyHertz, float dampingRatio,
+	const b2Body* bodyA, const b2Body* bodyB);
+
 /// The base joint class. Joints are used to constraint two bodies together in
 /// various fashions. Some joints also feature limits and motors.
 class b2Joint
@@ -149,7 +151,7 @@ public:
 	bool GetCollideConnected() const;
 
 	/// Dump this joint to the log file.
-	virtual void Dump() { b2Log("// Dump is not supported for this joint type.\n"); }
+	virtual void Dump() { b2Dump("// Dump is not supported for this joint type.\n"); }
 
 	/// Shift the origin for any points stored in world coordinates.
 	virtual void ShiftOrigin(const b2Vec2& newOrigin) { B2_NOT_USED(newOrigin);  }

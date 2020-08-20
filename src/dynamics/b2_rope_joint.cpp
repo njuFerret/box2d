@@ -43,7 +43,6 @@ b2RopeJoint::b2RopeJoint(const b2RopeJointDef* def)
 
 	m_mass = 0.0f;
 	m_impulse = 0.0f;
-	m_state = e_inactiveLimit;
 	m_length = 0.0f;
 }
 
@@ -75,16 +74,6 @@ void b2RopeJoint::InitVelocityConstraints(const b2SolverData& data)
 	m_u = cB + m_rB - cA - m_rA;
 
 	m_length = m_u.Length();
-
-	float C = m_length - m_maxLength;
-	if (C > 0.0f)
-	{
-		m_state = e_atUpperLimit;
-	}
-	else
-	{
-		m_state = e_inactiveLimit;
-	}
 
 	if (m_length > b2_linearSlop)
 	{
@@ -176,8 +165,8 @@ bool b2RopeJoint::SolvePositionConstraints(const b2SolverData& data)
 	b2Vec2 rB = b2Mul(qB, m_localAnchorB - m_localCenterB);
 	b2Vec2 u = cB + rB - cA - rA;
 
-	float length = u.Normalize();
-	float C = length - m_maxLength;
+	m_length = u.Normalize();
+	float C = m_length - m_maxLength;
 
 	C = b2Clamp(C, 0.0f, b2_maxLinearCorrection);
 
@@ -194,7 +183,7 @@ bool b2RopeJoint::SolvePositionConstraints(const b2SolverData& data)
 	data.positions[m_indexB].c = cB;
 	data.positions[m_indexB].a = aB;
 
-	return length - m_maxLength < b2_linearSlop;
+	return m_length - m_maxLength < b2_linearSlop;
 }
 
 b2Vec2 b2RopeJoint::GetAnchorA() const
@@ -224,9 +213,9 @@ float b2RopeJoint::GetMaxLength() const
 	return m_maxLength;
 }
 
-b2LimitState b2RopeJoint::GetLimitState() const
+float b2RopeJoint::GetLength() const
 {
-	return m_state;
+	return m_length;
 }
 
 void b2RopeJoint::Dump()
@@ -234,12 +223,12 @@ void b2RopeJoint::Dump()
 	int32 indexA = m_bodyA->m_islandIndex;
 	int32 indexB = m_bodyB->m_islandIndex;
 
-	b2Log("  b2RopeJointDef jd;\n");
-	b2Log("  jd.bodyA = bodies[%d];\n", indexA);
-	b2Log("  jd.bodyB = bodies[%d];\n", indexB);
-	b2Log("  jd.collideConnected = bool(%d);\n", m_collideConnected);
-	b2Log("  jd.localAnchorA.Set(%.15lef, %.15lef);\n", m_localAnchorA.x, m_localAnchorA.y);
-	b2Log("  jd.localAnchorB.Set(%.15lef, %.15lef);\n", m_localAnchorB.x, m_localAnchorB.y);
-	b2Log("  jd.maxLength = %.15lef;\n", m_maxLength);
-	b2Log("  joints[%d] = m_world->CreateJoint(&jd);\n", m_index);
+	b2Dump("  b2RopeJointDef jd;\n");
+	b2Dump("  jd.bodyA = bodies[%d];\n", indexA);
+	b2Dump("  jd.bodyB = bodies[%d];\n", indexB);
+	b2Dump("  jd.collideConnected = bool(%d);\n", m_collideConnected);
+	b2Dump("  jd.localAnchorA.Set(%.9g, %.9g);\n", m_localAnchorA.x, m_localAnchorA.y);
+	b2Dump("  jd.localAnchorB.Set(%.9g, %.9g);\n", m_localAnchorB.x, m_localAnchorB.y);
+	b2Dump("  jd.maxLength = %.9g;\n", m_maxLength);
+	b2Dump("  joints[%d] = m_world->CreateJoint(&jd);\n", m_index);
 }

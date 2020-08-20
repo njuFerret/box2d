@@ -388,7 +388,7 @@ public:
 	b2World* GetWorld();
 	const b2World* GetWorld() const;
 
-	/// Dump this body to a log file
+	/// Dump this body to a file
 	void Dump();
 
 private:
@@ -640,6 +640,11 @@ inline bool b2Body::IsBullet() const
 
 inline void b2Body::SetAwake(bool flag)
 {
+	if (m_type == b2_staticBody)
+	{
+		return;
+	}
+
 	if (flag)
 	{
 		m_flags |= e_awakeFlag;
