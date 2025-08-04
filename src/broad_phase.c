@@ -9,14 +9,14 @@
 
 #include "aabb.h"
 #include "array.h"
+#include "atomic.h"
 #include "body.h"
 #include "contact.h"
 #include "core.h"
 #include "shape.h"
-#include "stack_allocator.h"
-#include "world.h"
+#include "arena_allocator.h"
+#include "physics_world.h"
 
-#include <stdatomic.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -34,13 +34,12 @@ void b2CreateBroadPhase( b2BroadPhase* bp )
 	//	fprintf(s_file, "============\n\n");
 	// }
 
-	bp->proxyCount = 0;
 	bp->moveSet = b2CreateSet( 16 );
 	bp->moveArray = b2IntArray_Create( 16 );
 	bp->moveResults = NULL;
 	bp->movePairs = NULL;
 	bp->movePairCapacity = 0;
-	bp->movePairIndex = 0;
+	b2AtomicStoreInt(&bp->movePairIndex, 0);
 	bp->pairSet = b2CreateSet( 32 );
 
 	for ( int i = 0; i < b2_bodyTypeCount; ++i )
@@ -107,8 +106,6 @@ void b2BroadPhase_DestroyProxy( b2BroadPhase* bp, int proxyKey )
 	B2_ASSERT( bp->moveArray.count == (int)bp->moveSet.count );
 	b2UnBufferMove( bp, proxyKey );
 
-	--bp->proxyCount;
-
 	b2BodyType proxyType = B2_PROXY_TYPE( proxyKey );
 	int proxyId = B2_PROXY_ID( proxyKey );
 
@@ -160,8 +157,10 @@ typedef struct b2QueryPairContext
 } b2QueryPairContext;
 
 // This is called from b2DynamicTree::Query when we are gathering pairs.
-static bool b2PairQueryCallback( int proxyId, int shapeId, void* context )
+static bool b2PairQueryCallback( int proxyId, uint64_t userData, void* context )
 {
+	int shapeId = (int)userData;
+
 	b2QueryPairContext* queryContext = context;
 	b2BroadPhase* broadPhase = &queryContext->world->broadPhase;
 
@@ -185,7 +184,7 @@ static bool b2PairQueryCallback( int proxyId, int shapeId, void* context )
 	// I had an optimization here to skip checking the move set if this is a query into
 	// the static tree. The assumption is that the static proxies are never in the move set
 	// so there is no risk of duplication. However, this is not true with
-	// b2ShapeDef::forceContactCreation, b2ShapeDef::isSensor, or when a static shape is modified.
+	// b2ShapeDef::invokeContactCreation or when a static shape is modified.
 	// There can easily be scenarios where the static proxy is in the moveSet but the dynamic proxy is not.
 	// I could have some flag to indicate that there are any static bodies in the moveSet.
 	
@@ -246,13 +245,13 @@ static bool b2PairQueryCallback( int proxyId, int shapeId, void* context )
 		return true;
 	}
 
-	if ( b2ShouldShapesCollide( shapeA->filter, shapeB->filter ) == false )
+	// Sensors are handled elsewhere
+	if ( shapeA->sensorIndex != B2_NULL_INDEX || shapeB->sensorIndex != B2_NULL_INDEX )
 	{
 		return true;
 	}
 
-	// Sensors don't collide with other sensors
-	if ( shapeA->isSensor == true && shapeB->isSensor == true )
+	if ( b2ShouldShapesCollide( shapeA->filter, shapeB->filter ) == false )
 	{
 		return true;
 	}
@@ -266,20 +265,23 @@ static bool b2PairQueryCallback( int proxyId, int shapeId, void* context )
 	}
 
 	// Custom user filter
-	b2CustomFilterFcn* customFilterFcn = queryContext->world->customFilterFcn;
-	if ( customFilterFcn != NULL )
+	if (shapeA->enableCustomFiltering || shapeB->enableCustomFiltering)
 	{
-		b2ShapeId idA = { shapeIdA + 1, world->worldId, shapeA->revision };
-		b2ShapeId idB = { shapeIdB + 1, world->worldId, shapeB->revision };
-		bool shouldCollide = customFilterFcn( idA, idB, queryContext->world->customFilterContext );
-		if ( shouldCollide == false )
+		b2CustomFilterFcn* customFilterFcn = queryContext->world->customFilterFcn;
+		if ( customFilterFcn != NULL )
 		{
-			return true;
+			b2ShapeId idA = { shapeIdA + 1, world->worldId, shapeA->generation };
+			b2ShapeId idB = { shapeIdB + 1, world->worldId, shapeB->generation };
+			bool shouldCollide = customFilterFcn( idA, idB, queryContext->world->customFilterContext );
+			if ( shouldCollide == false )
+			{
+				return true;
+			}
 		}
 	}
 
 	// todo per thread to eliminate atomic?
-	int pairIndex = atomic_fetch_add( &broadPhase->movePairIndex, 1 );
+	int pairIndex = b2AtomicFetchAddInt( &broadPhase->movePairIndex, 1 );
 
 	b2MovePair* pair;
 	if ( pairIndex < broadPhase->movePairCapacity )
@@ -302,11 +304,18 @@ static bool b2PairQueryCallback( int proxyId, int shapeId, void* context )
 	return true;
 }
 
-void b2FindPairsTask( int startIndex, int endIndex, uint32_t threadIndex, void* context )
-{
-	b2TracyCZoneNC( pair_task, "Pair Task", b2_colorAquamarine, true );
+// Warning: writing to these globals significantly slows multithreading performance
+#if B2_SNOOP_PAIR_COUNTERS
+b2TreeStats b2_dynamicStats;
+b2TreeStats b2_kinematicStats;
+b2TreeStats b2_staticStats;
+#endif
 
-	B2_MAYBE_UNUSED( threadIndex );
+static void b2FindPairsTask( int startIndex, int endIndex, uint32_t threadIndex, void* context )
+{
+	b2TracyCZoneNC( pair_task, "Pair", b2_colorMediumSlateBlue, true );
+
+	B2_UNUSED( threadIndex );
 
 	b2World* world = context;
 	b2BroadPhase* bp = &world->broadPhase;
@@ -337,24 +346,31 @@ void b2FindPairsTask( int startIndex, int endIndex, uint32_t threadIndex, void* 
 		// We have to query the tree with the fat AABB so that
 		// we don't fail to create a contact that may touch later.
 		b2AABB fatAABB = b2DynamicTree_GetAABB( baseTree, proxyId );
-		queryContext.queryShapeIndex = b2DynamicTree_GetUserData( baseTree, proxyId );
+		queryContext.queryShapeIndex = (int)b2DynamicTree_GetUserData( baseTree, proxyId );
 
 		// Query trees. Only dynamic proxies collide with kinematic and static proxies.
-		// Using b2_defaultMaskBits so that b2Filter::groupIndex works.
+		// Using B2_DEFAULT_MASK_BITS so that b2Filter::groupIndex works.
+		b2TreeStats stats = { 0 };
 		if ( proxyType == b2_dynamicBody )
 		{
-			// consider using bits = groupIndex > 0 ? b2_defaultMaskBits : maskBits
+			// consider using bits = groupIndex > 0 ? B2_DEFAULT_MASK_BITS : maskBits
 			queryContext.queryTreeType = b2_kinematicBody;
-			b2DynamicTree_Query( bp->trees + b2_kinematicBody, fatAABB, b2_defaultMaskBits, b2PairQueryCallback, &queryContext );
+			b2TreeStats statsKinematic = b2DynamicTree_Query( bp->trees + b2_kinematicBody, fatAABB, B2_DEFAULT_MASK_BITS, b2PairQueryCallback, &queryContext );
+			stats.nodeVisits += statsKinematic.nodeVisits;
+			stats.leafVisits += statsKinematic.leafVisits;
 
 			queryContext.queryTreeType = b2_staticBody;
-			b2DynamicTree_Query( bp->trees + b2_staticBody, fatAABB, b2_defaultMaskBits, b2PairQueryCallback, &queryContext );
+			b2TreeStats statsStatic = b2DynamicTree_Query( bp->trees + b2_staticBody, fatAABB, B2_DEFAULT_MASK_BITS, b2PairQueryCallback, &queryContext );
+			stats.nodeVisits += statsStatic.nodeVisits;
+			stats.leafVisits += statsStatic.leafVisits;
 		}
 
 		// All proxies collide with dynamic proxies
-		// Using b2_defaultMaskBits so that b2Filter::groupIndex works.
+		// Using B2_DEFAULT_MASK_BITS so that b2Filter::groupIndex works.
 		queryContext.queryTreeType = b2_dynamicBody;
-		b2DynamicTree_Query( bp->trees + b2_dynamicBody, fatAABB, b2_defaultMaskBits, b2PairQueryCallback, &queryContext );
+		b2TreeStats statsDynamic = b2DynamicTree_Query( bp->trees + b2_dynamicBody, fatAABB, B2_DEFAULT_MASK_BITS, b2PairQueryCallback, &queryContext );
+		stats.nodeVisits += statsDynamic.nodeVisits;
+		stats.leafVisits += statsDynamic.leafVisits;
 	}
 
 	b2TracyCZoneEnd( pair_task );
@@ -372,19 +388,19 @@ void b2UpdateBroadPhasePairs( b2World* world )
 		return;
 	}
 
-	b2TracyCZoneNC( update_pairs, "Pairs", b2_colorMagenta, true );
+	b2TracyCZoneNC( update_pairs, "Find Pairs", b2_colorMediumSlateBlue, true );
 
-	b2StackAllocator* alloc = &world->stackAllocator;
+	b2ArenaAllocator* alloc = &world->arena;
 
 	// todo these could be in the step context
-	bp->moveResults = b2AllocateStackItem( alloc, moveCount * sizeof( b2MoveResult ), "move results" );
+	bp->moveResults = b2AllocateArenaItem( alloc, moveCount * sizeof( b2MoveResult ), "move results" );
 	bp->movePairCapacity = 16 * moveCount;
-	bp->movePairs = b2AllocateStackItem( alloc, bp->movePairCapacity * sizeof( b2MovePair ), "move pairs" );
-	bp->movePairIndex = 0;
+	bp->movePairs = b2AllocateArenaItem( alloc, bp->movePairCapacity * sizeof( b2MovePair ), "move pairs" );
+	b2AtomicStoreInt(&bp->movePairIndex, 0);
 
-#ifndef NDEBUG
-	extern _Atomic int g_probeCount;
-	g_probeCount = 0;
+#if B2_SNOOP_TABLE_COUNTERS
+	extern b2AtomicInt b2_probeCount;
+	b2AtomicStoreInt(&b2_probeCount, 0);
 #endif
 
 	int minRange = 64;
@@ -395,7 +411,9 @@ void b2UpdateBroadPhasePairs( b2World* world )
 		world->taskCount += 1;
 	}
 
-	b2TracyCZoneNC( create_contacts, "Create Contacts", b2_colorGold, true );
+	// todo_erin could start tree rebuild here
+
+	b2TracyCZoneNC( create_contacts, "Create Contacts", b2_colorCoral, true );
 
 	// Single-threaded work
 	// - Clear move flags
@@ -446,9 +464,9 @@ void b2UpdateBroadPhasePairs( b2World* world )
 	b2IntArray_Clear( &bp->moveArray );
 	b2ClearSet( &bp->moveSet );
 
-	b2FreeStackItem( alloc, bp->movePairs );
+	b2FreeArenaItem( alloc, bp->movePairs );
 	bp->movePairs = NULL;
-	b2FreeStackItem( alloc, bp->moveResults );
+	b2FreeArenaItem( alloc, bp->moveResults );
 	bp->moveResults = NULL;
 
 	b2ValidateSolverSets( world );
@@ -481,7 +499,7 @@ int b2BroadPhase_GetShapeIndex( b2BroadPhase* bp, int proxyKey )
 	int typeIndex = B2_PROXY_TYPE( proxyKey );
 	int proxyId = B2_PROXY_ID( proxyKey );
 
-	return b2DynamicTree_GetUserData( bp->trees + typeIndex, proxyId );
+	return (int)b2DynamicTree_GetUserData( bp->trees + typeIndex, proxyId );
 }
 
 void b2ValidateBroadphase( const b2BroadPhase* bp )
@@ -498,20 +516,9 @@ void b2ValidateNoEnlarged( const b2BroadPhase* bp )
 	for ( int j = 0; j < b2_bodyTypeCount; ++j )
 	{
 		const b2DynamicTree* tree = bp->trees + j;
-		int capacity = tree->nodeCapacity;
-		const b2TreeNode* nodes = tree->nodes;
-		for ( int i = 0; i < capacity; ++i )
-		{
-			const b2TreeNode* node = nodes + i;
-			if ( node->height < 0 )
-			{
-				continue;
-			}
-
-			B2_ASSERT( (node->flags & b2_enlargedNode) == 0 );
-		}
+		b2DynamicTree_ValidateNoEnlarged( tree );
 	}
 #else
-	B2_MAYBE_UNUSED( bp );
+	B2_UNUSED( bp );
 #endif
 }

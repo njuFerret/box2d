@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "core.h"
+
 #include "box2d/math_functions.h"
 
 #include <stdbool.h>
@@ -54,7 +56,7 @@ typedef struct b2SolverBlock
 	int16_t count;
 	int16_t blockType; // b2SolverBlockType
 	// todo consider false sharing of this atomic
-	_Atomic int syncIndex;
+	b2AtomicInt syncIndex;
 } b2SolverBlock;
 
 // Each stage must be completed before going to the next stage.
@@ -66,7 +68,7 @@ typedef struct b2SolverStage
 	int blockCount;
 	int colorIndex;
 	// todo consider false sharing of this atomic
-	_Atomic int completionCount;
+	b2AtomicInt completionCount;
 } b2SolverStage;
 
 // Context for a time step. Recreated each time step.
@@ -84,7 +86,6 @@ typedef struct b2StepContext
 
 	int subStepCount;
 
-	b2Softness jointSoftness;
 	b2Softness contactSoftness;
 	b2Softness staticSoftness;
 
@@ -104,13 +105,9 @@ typedef struct b2StepContext
 	int* enlargedShapes;
 	int enlargedShapeCount;
 
-	// Array of fast bodies that need continuous collision handling
-	int* fastBodies;
-	_Atomic int fastBodyCount;
-
 	// Array of bullet bodies that need continuous collision handling
 	int* bulletBodies;
-	_Atomic int bulletBodyCount;
+	b2AtomicInt bulletBodyCount;
 
 	// joint pointers for simplified parallel-for access.
 	b2JointSim** joints;
@@ -134,7 +131,7 @@ typedef struct b2StepContext
 	char dummy1[64];
 
 	// sync index (16-bits) | stage type (16-bits)
-	_Atomic unsigned int atomicSyncBits;
+	b2AtomicU32 atomicSyncBits;
 
 	char dummy2[64];
 
@@ -144,14 +141,44 @@ static inline b2Softness b2MakeSoft( float hertz, float zeta, float h )
 {
 	if ( hertz == 0.0f )
 	{
-		return ( b2Softness ){ 0.0f, 1.0f, 0.0f };
+		return (b2Softness){
+			.biasRate = 0.0f,
+			.massScale = 0.0f,
+			.impulseScale = 0.0f,
+		};
 	}
 
-	float omega = 2.0f * b2_pi * hertz;
+	float omega = 2.0f * B2_PI * hertz;
 	float a1 = 2.0f * zeta + h * omega;
 	float a2 = h * omega * a1;
 	float a3 = 1.0f / ( 1.0f + a2 );
-	return ( b2Softness ){ omega / a1, a2 * a3, a3 };
+
+	// bias = w / (2 * z + hw)
+	// massScale = hw * (2 * z + hw) / (1 + hw * (2 * z + hw))
+	// impulseScale = 1 / (1 + hw * (2 * z + hw))
+
+	// If z == 0
+	// bias = 1/h
+	// massScale = hw^2 / (1 + hw^2)
+	// impulseScale = 1 / (1 + hw^2)
+
+	// w -> inf
+	// bias = 1/h
+	// massScale = 1
+	// impulseScale = 0
+
+	// if w = pi / 4  * inv_h
+	// massScale = (pi/4)^2 / (1 + (pi/4)^2) = pi^2 / (16 + pi^2) ~= 0.38
+	// impulseScale = 1 / (1 + (pi/4)^2) = 16 / (16 + pi^2) ~= 0.62
+
+	// In all cases:
+	// massScale + impulseScale == 1
+
+	return (b2Softness){
+		.biasRate = omega / a1,
+		.massScale = a2 * a3,
+		.impulseScale = a3,
+	};
 }
 
 void b2Solve( b2World* world, b2StepContext* stepContext );

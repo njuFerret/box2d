@@ -5,7 +5,8 @@
 
 #include "box2d/types.h"
 
-//
+struct ImFont;
+
 struct Camera
 {
 	Camera();
@@ -18,8 +19,8 @@ struct Camera
 
 	b2Vec2 m_center;
 	float m_zoom;
-	int32_t m_width;
-	int32_t m_height;
+	float m_width;
+	float m_height;
 };
 
 // This class implements Box2D debug drawing callbacks
@@ -29,7 +30,7 @@ public:
 	Draw();
 	~Draw();
 
-	void Create();
+	void Create( Camera* camera );
 	void Destroy();
 
 	void DrawPolygon( const b2Vec2* vertices, int32_t vertexCount, b2HexColor color );
@@ -40,7 +41,7 @@ public:
 
 	void DrawSolidCapsule( b2Vec2 p1, b2Vec2 p2, float radius, b2HexColor color );
 
-	void DrawSegment( b2Vec2 p1, b2Vec2 p2, b2HexColor color );
+	void DrawLine( b2Vec2 p1, b2Vec2 p2, b2HexColor color );
 
 	void DrawTransform( b2Transform transform );
 
@@ -50,23 +51,23 @@ public:
 
 	void DrawString( b2Vec2 p, const char* string, ... );
 
-	void DrawAABB( b2AABB aabb, b2HexColor color );
+	void DrawBounds( b2AABB aabb, b2HexColor color );
 
 	void Flush();
 	void DrawBackground();
 
+	Camera* m_camera;
 	bool m_showUI;
 	struct GLBackground* m_background;
 	struct GLPoints* m_points;
 	struct GLLines* m_lines;
-	struct GLTriangles* m_triangles;
 	struct GLCircles* m_circles;
 	struct GLSolidCircles* m_solidCircles;
 	struct GLSolidCapsules* m_solidCapsules;
 	struct GLSolidPolygons* m_solidPolygons;
 	b2DebugDraw m_debugDraw;
-};
 
-extern Draw g_draw;
-extern Camera g_camera;
-extern struct GLFWwindow* g_mainWindow;
+	ImFont* m_regularFont;
+	ImFont* m_mediumFont;
+	ImFont* m_largeFont;
+};

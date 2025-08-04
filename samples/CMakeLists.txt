@@ -37,6 +37,9 @@ FetchContent_Populate(imgui
 set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/build/imgui)
 
 add_library(imgui STATIC
+	${IMGUI_DIR}/imconfig.h
+	${IMGUI_DIR}/imgui.h
+
 	${IMGUI_DIR}/imgui.cpp
 	${IMGUI_DIR}/imgui_draw.cpp
 	${IMGUI_DIR}/imgui_demo.cpp
@@ -50,6 +53,13 @@ add_library(imgui STATIC
 target_link_libraries(imgui PUBLIC glfw glad)
 target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
 target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
+# The sample app also uses stb_truetype and this keeps the symbols separate
+target_compile_definitions(imgui PRIVATE IMGUI_STB_NAMESPACE=imgui_stb)
+set_target_properties(imgui PROPERTIES
+	CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
 
 # jsmn for json
 set(JSMN_DIR ${CMAKE_SOURCE_DIR}/extern/jsmn)
@@ -71,28 +81,32 @@ set(BOX2D_SAMPLE_FILES
 	sample.h
 	sample_benchmark.cpp
 	sample_bodies.cpp
+	sample_character.cpp
 	sample_collision.cpp
 	sample_continuous.cpp
 	sample_determinism.cpp
 	sample_events.cpp
 	sample_geometry.cpp
+	sample_issues.cpp
 	sample_joints.cpp
 	sample_robustness.cpp
 	sample_shapes.cpp
 	sample_stacking.cpp
 	sample_world.cpp
-	settings.cpp
-	settings.h
 	shader.cpp
 	shader.h)
 
 add_executable(samples ${BOX2D_SAMPLE_FILES})
 
 set_target_properties(samples PROPERTIES
-	CXX_STANDARD 17
+	CXX_STANDARD 20
     CXX_STANDARD_REQUIRED YES
     CXX_EXTENSIONS NO
 )
+
+if (BOX2D_COMPILE_WARNING_AS_ERROR)
+	set_target_properties(samples PROPERTIES COMPILE_WARNING_AS_ERROR ON)
+endif()
 
 target_include_directories(samples PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${JSMN_DIR})
 target_link_libraries(samples PUBLIC box2d shared imgui glfw glad enkiTS)

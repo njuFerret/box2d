@@ -3,7 +3,7 @@
 
 #include "test_macros.h"
 
-#if defined( _WIN32 )
+#if defined( _MSC_VER )
 	#include <crtdbg.h>
 
 // int MyAllocHook(int allocType, void* userData, size_t size, int blockType, long requestNumber, const unsigned char* filename,
@@ -30,7 +30,7 @@ extern int WorldTest( void );
 
 int main( void )
 {
-#if defined( _WIN32 )
+#if defined( _MSC_VER )
 	// Enable memory-leak reports
 
 	// How to break at the leaking allocation, in the watch window enter this variable
@@ -50,12 +50,12 @@ int main( void )
 	printf( "Starting Box2D unit tests\n" );
 	printf( "======================================\n" );
 
+	RUN_TEST( MathTest );
 	RUN_TEST( BitSetTest );
 	RUN_TEST( CollisionTest );
 	RUN_TEST( DeterminismTest );
 	RUN_TEST( DistanceTest );
 	RUN_TEST( IdTest );
-	RUN_TEST( MathTest );
 	RUN_TEST( ShapeTest );
 	RUN_TEST( TableTest );
 	RUN_TEST( WorldTest );
@@ -63,7 +63,7 @@ int main( void )
 	printf( "======================================\n" );
 	printf( "All Box2D tests passed!\n" );
 
-#if defined( _WIN32 )
+#if defined( _MSC_VER )
 	if ( _CrtDumpMemoryLeaks() )
 	{
 		return 1;

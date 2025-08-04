@@ -10,7 +10,7 @@ typedef struct b2Joint b2Joint;
 typedef struct b2World b2World;
 
 // This holds solver set data. The following sets are used:
-// - static set for all static bodies (no contacts or joints)
+// - static set for all static bodies and joints between static bodies
 // - active set for all active bodies with body states (no contacts or joints)
 // - disabled set for disabled bodies and their joints
 // - all further sets are sleeping island sets along with their contacts and joints
@@ -54,4 +54,4 @@ void b2MergeSolverSets( b2World* world, int setIndex1, int setIndex2 );
 void b2TransferBody( b2World* world, b2SolverSet* targetSet, b2SolverSet* sourceSet, b2Body* body );
 void b2TransferJoint( b2World* world, b2SolverSet* targetSet, b2SolverSet* sourceSet, b2Joint* joint );
 
-B2_ARRAY_INLINE( b2SolverSet, b2SolverSet );
+B2_ARRAY_INLINE( b2SolverSet, b2SolverSet )

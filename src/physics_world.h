@@ -8,11 +8,9 @@
 #include "broad_phase.h"
 #include "constraint_graph.h"
 #include "id_pool.h"
-#include "stack_allocator.h"
+#include "arena_allocator.h"
 
 #include "box2d/types.h"
-
-typedef struct b2ContactSim b2ContactSim;
 
 enum b2SetType
 {
@@ -25,8 +23,14 @@ enum b2SetType
 // Per thread task storage
 typedef struct b2TaskContext
 {
-	// These bits align with the b2ConstraintGraph::contactBlocks and signal a change in contact status
+	// Collect per thread sensor continuous hit events.
+	b2SensorHitArray sensorHits;
+
+	// These bits align with the contact id capacity and signal a change in contact status
 	b2BitSet contactStateBitSet;
+
+	// These bits align with the joint id capacity and signal a change in contact status
+	b2BitSet jointStateBitSet;
 
 	// Used to track bodies with shapes that have enlarged AABBs. This avoids having a bit array
 	// that is very large when there are many static shapes.
@@ -41,12 +45,11 @@ typedef struct b2TaskContext
 
 } b2TaskContext;
 
-/// The world class manages all physics entities, dynamic simulation,
-/// and asynchronous queries. The world also contains efficient memory
-/// management facilities.
+// The world struct manages all physics entities, dynamic simulation,  and asynchronous queries.
+// The world also contains efficient memory management facilities.
 typedef struct b2World
 {
-	b2StackAllocator stackAllocator;
+	b2ArenaAllocator arena;
 	b2BroadPhase broadPhase;
 	b2ConstraintGraph constraintGraph;
 
@@ -95,8 +98,12 @@ typedef struct b2World
 	b2ShapeArray shapes;
 	b2ChainShapeArray chainShapes;
 
+	// This is a dense array of sensor data.
+	b2SensorArray sensors;
+
 	// Per thread storage
 	b2TaskContextArray taskContexts;
+	b2SensorTaskContextArray sensorTaskContexts;
 
 	b2BodyMoveEventArray bodyMoveEvents;
 	b2SensorBeginTouchEventArray sensorBeginEvents;
@@ -108,11 +115,22 @@ typedef struct b2World
 	int endEventArrayIndex;
 
 	b2ContactHitEventArray contactHitEvents;
+	b2JointEventArray jointEvents;
+
+	// todo consider deferred waking and impulses to make it possible
+	// to apply forces and impulses from multiple threads
+	// impulses must be deferred because sleeping bodies have no velocity state
+	// Problems:
+	// - multiple forces applied to the same body from multiple threads
+	// Deferred wake
+	//b2BitSet bodyWakeSet;
+	//b2ImpulseArray deferredImpulses;
 
 	// Used to track debug draw
 	b2BitSet debugBodySet;
 	b2BitSet debugJointSet;
 	b2BitSet debugContactSet;
+	b2BitSet debugIslandSet;
 
 	// Id that is incremented every time step
 	uint64_t stepIndex;
@@ -129,17 +147,15 @@ typedef struct b2World
 	b2Vec2 gravity;
 	float hitEventThreshold;
 	float restitutionThreshold;
-	float maxLinearVelocity;
-	float contactPushoutVelocity;
+	float maxLinearSpeed;
+	float contactSpeed;
 	float contactHertz;
 	float contactDampingRatio;
-	float jointHertz;
-	float jointDampingRatio;
 
-	b2MixingRule frictionMixingRule;
-	b2MixingRule restitutionMixingRule;
+	b2FrictionCallback* frictionCallback;
+	b2RestitutionCallback* restitutionCallback;
 
-	uint16_t revision;
+	uint16_t generation;
 
 	b2Profile profile;
 
@@ -169,6 +185,7 @@ typedef struct b2World
 	bool locked;
 	bool enableWarmStarting;
 	bool enableContinuous;
+	bool enableSpeculative;
 	bool inUse;
 } b2World;
 
@@ -180,10 +197,11 @@ void b2ValidateConnectivity( b2World* world );
 void b2ValidateSolverSets( b2World* world );
 void b2ValidateContacts( b2World* world );
 
-B2_ARRAY_INLINE( b2BodyMoveEvent, b2BodyMoveEvent );
-B2_ARRAY_INLINE( b2ContactBeginTouchEvent, b2ContactBeginTouchEvent );
-B2_ARRAY_INLINE( b2ContactEndTouchEvent, b2ContactEndTouchEvent );
-B2_ARRAY_INLINE( b2ContactHitEvent, b2ContactHitEvent );
-B2_ARRAY_INLINE( b2SensorBeginTouchEvent, b2SensorBeginTouchEvent );
-B2_ARRAY_INLINE( b2SensorEndTouchEvent, b2SensorEndTouchEvent );
-B2_ARRAY_INLINE( b2TaskContext, b2TaskContext );
+B2_ARRAY_INLINE( b2BodyMoveEvent, b2BodyMoveEvent )
+B2_ARRAY_INLINE( b2ContactBeginTouchEvent, b2ContactBeginTouchEvent )
+B2_ARRAY_INLINE( b2ContactEndTouchEvent, b2ContactEndTouchEvent )
+B2_ARRAY_INLINE( b2ContactHitEvent, b2ContactHitEvent )
+B2_ARRAY_INLINE( b2JointEvent, b2JointEvent )
+B2_ARRAY_INLINE( b2SensorBeginTouchEvent, b2SensorBeginTouchEvent )
+B2_ARRAY_INLINE( b2SensorEndTouchEvent, b2SensorEndTouchEvent )
+B2_ARRAY_INLINE( b2TaskContext, b2TaskContext )

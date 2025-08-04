@@ -7,18 +7,18 @@
 
 typedef enum BoneId
 {
-	boneId_hip = 0,
-	boneId_torso = 1,
-	boneId_head = 2,
-	boneId_upperLeftLeg = 3,
-	boneId_lowerLeftLeg = 4,
-	boneId_upperRightLeg = 5,
-	boneId_lowerRightLeg = 6,
-	boneId_upperLeftArm = 7,
-	boneId_lowerLeftArm = 8,
-	boneId_upperRightArm = 9,
-	boneId_lowerRightArm = 10,
-	boneId_count = 11,
+	bone_hip = 0,
+	bone_torso = 1,
+	bone_head = 2,
+	bone_upperLeftLeg = 3,
+	bone_lowerLeftLeg = 4,
+	bone_upperRightLeg = 5,
+	bone_lowerRightLeg = 6,
+	bone_upperLeftArm = 7,
+	bone_lowerLeftArm = 8,
+	bone_upperRightArm = 9,
+	bone_lowerRightArm = 10,
+	bone_count = 11,
 } BoneId;
 
 typedef struct Bone
@@ -26,22 +26,37 @@ typedef struct Bone
 	b2BodyId bodyId;
 	b2JointId jointId;
 	float frictionScale;
+	float maxTorque;
 	int parentIndex;
 } Bone;
 
 typedef struct Human
 {
-	Bone bones[boneId_count];
+	Bone bones[bone_count];
+	float frictionTorque;
+	float originalScale;
 	float scale;
 	bool isSpawned;
 } Human;
 
-B2_API void CreateHuman( Human* human, b2WorldId worldId, b2Vec2 position, float scale, float frictionTorque, float hertz, float dampingRatio,
-						   int groupIndex, void* userData, bool colorize );
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
-B2_API void DestroyHuman( Human* human );
+void CreateHuman( Human* human, b2WorldId worldId, b2Vec2 position, float scale, float frictionTorque, float hertz,
+				  float dampingRatio, int groupIndex, void* userData, bool colorize );
 
-B2_API void Human_ApplyRandomAngularImpulse( Human* human, float magnitude );
-B2_API void Human_SetJointFrictionTorque( Human* human, float torque );
-B2_API void Human_SetJointSpringHertz( Human* human, float hertz );
-B2_API void Human_SetJointDampingRatio( Human* human, float dampingRatio );
+void DestroyHuman( Human* human );
+
+void Human_SetVelocity( Human* human, b2Vec2 velocity );
+void Human_ApplyRandomAngularImpulse( Human* human, float magnitude );
+void Human_SetJointFrictionTorque( Human* human, float torque );
+void Human_SetJointSpringHertz( Human* human, float hertz );
+void Human_SetJointDampingRatio( Human* human, float dampingRatio );
+void Human_EnableSensorEvents( Human* human, bool enable );
+void Human_SetScale( Human* human, float scale );
+
+#ifdef __cplusplus
+}
+#endif

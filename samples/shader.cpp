@@ -1,15 +1,19 @@
 // SPDX-FileCopyrightText: 2024 Erin Catto
 // SPDX-License-Identifier: MIT
 
+#if defined( _MSC_VER ) && !defined( _CRT_SECURE_NO_WARNINGS )
 #define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #include "shader.h"
+
+#include "../src/core.h"
 
 #include <assert.h>
 #include <glad/glad.h>
 #include <stdio.h>
 
-#if defined( _WIN32 )
+#if defined( _MSC_VER )
 	#define _CRTDBG_MAP_ALLOC
 	#include <crtdbg.h>
 	#include <stdlib.h>
@@ -37,7 +41,7 @@ void DumpInfoGL()
 	printf( "-------------------------------------------------------------\n" );
 }
 
-void CheckErrorGL()
+void CheckOpenGL()
 {
 	GLenum errCode = glGetError();
 	if ( errCode != GL_NO_ERROR )
@@ -151,6 +155,7 @@ static GLuint sCreateShaderFromFile( const char* filename, GLenum type )
 
 	char* source = static_cast<char*>( malloc( size + 1 ) );
 	size_t count = fread( source, size, 1, file );
+	B2_UNUSED( count );
 	fclose( file );
 
 	source[size] = 0;

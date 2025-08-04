@@ -19,6 +19,18 @@
 // - cannot debug
 // - breaks code navigation
 
+// The fragmentation problem with factor 2:
+// When you double capacity, the new allocation is larger than the sum of all previous allocations:
+//
+// 1st allocation: 8 bytes
+// 2nd allocation: 16 bytes
+// 3rd allocation: 32 bytes (larger than 8 + 16 = 24)
+//
+// This means the memory freed from previous allocations can never be reused for future expansions
+// of the same array. The allocator must always find fresh memory.
+
+// todo_erin consider code-gen: https://github.com/IbrahimHindawi/haikal
+
 // Array declaration that doesn't need the type T to be defined
 #define B2_ARRAY_DECLARE( T, PREFIX )                                                                                            \
 	typedef struct                                                                                                               \
@@ -29,7 +41,7 @@
 	} PREFIX##Array;                                                                                                             \
 	PREFIX##Array PREFIX##Array_Create( int capacity );                                                                          \
 	void PREFIX##Array_Reserve( PREFIX##Array* a, int newCapacity );                                                             \
-	void PREFIX##Array_Destroy( PREFIX##Array* a );
+	void PREFIX##Array_Destroy( PREFIX##Array* a )
 
 #define B2_DECLARE_ARRAY_NATIVE( T, PREFIX )                                                                                     \
 	typedef struct                                                                                                               \
@@ -41,7 +53,7 @@
 	/* Create array with initial capacity. Zero initialization is also supported */                                              \
 	PREFIX##Array PREFIX##Array_Create( int capacity );                                                                          \
 	void PREFIX##Array_Reserve( PREFIX##Array* a, int newCapacity );                                                             \
-	void PREFIX##Array_Destroy( PREFIX##Array* a );
+	void PREFIX##Array_Destroy( PREFIX##Array* a )
 
 // Inline array functions that need the type T to be defined
 #define B2_ARRAY_INLINE( T, PREFIX )                                                                                             \
@@ -150,7 +162,7 @@
 	}
 
 B2_DECLARE_ARRAY_NATIVE( int, b2Int );
-B2_ARRAY_INLINE( int, b2Int );
+B2_ARRAY_INLINE( int, b2Int )
 
 // Declare all the arrays
 B2_ARRAY_DECLARE( b2Body, b2Body );
@@ -166,9 +178,14 @@ B2_ARRAY_DECLARE( b2ContactSim, b2ContactSim );
 B2_ARRAY_DECLARE( b2Island, b2Island );
 B2_ARRAY_DECLARE( b2IslandSim, b2IslandSim );
 B2_ARRAY_DECLARE( b2Joint, b2Joint );
+B2_ARRAY_DECLARE( b2JointEvent, b2JointEvent );
 B2_ARRAY_DECLARE( b2JointSim, b2JointSim );
+B2_ARRAY_DECLARE( b2Sensor, b2Sensor );
 B2_ARRAY_DECLARE( b2SensorBeginTouchEvent, b2SensorBeginTouchEvent );
 B2_ARRAY_DECLARE( b2SensorEndTouchEvent, b2SensorEndTouchEvent );
+B2_ARRAY_DECLARE( b2SensorTaskContext, b2SensorTaskContext );
 B2_ARRAY_DECLARE( b2Shape, b2Shape );
+B2_ARRAY_DECLARE( b2Visitor, b2Visitor );
 B2_ARRAY_DECLARE( b2SolverSet, b2SolverSet );
 B2_ARRAY_DECLARE( b2TaskContext, b2TaskContext );
+B2_ARRAY_DECLARE( b2SensorHit, b2SensorHit );
