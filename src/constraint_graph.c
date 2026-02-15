@@ -8,8 +8,8 @@
 #include "body.h"
 #include "contact.h"
 #include "joint.h"
-#include "solver_set.h"
 #include "physics_world.h"
+#include "solver_set.h"
 
 #include <string.h>
 
@@ -32,7 +32,7 @@ void b2CreateGraph( b2ConstraintGraph* graph, int bodyCapacity )
 	_Static_assert( B2_OVERFLOW_INDEX == B2_GRAPH_COLOR_COUNT - 1, "bad over flow index" );
 	_Static_assert( B2_DYNAMIC_COLOR_COUNT >= 2, "need more dynamic colors" );
 
-	*graph = ( b2ConstraintGraph ){ 0 };
+	*graph = (b2ConstraintGraph){ 0 };
 
 	bodyCapacity = b2MaxInt( bodyCapacity, 8 );
 
@@ -64,7 +64,6 @@ void b2DestroyGraph( b2ConstraintGraph* graph )
 
 // Contacts are always created as non-touching. They get cloned into the constraint
 // graph once they are found to be touching.
-// todo maybe kinematic bodies should not go into graph
 void b2AddContactToGraph( b2World* world, b2ContactSim* contactSim, b2Contact* contact )
 {
 	B2_ASSERT( contactSim->manifold.pointCount > 0 );
@@ -78,12 +77,13 @@ void b2AddContactToGraph( b2World* world, b2ContactSim* contactSim, b2Contact* c
 	int bodyIdB = contact->edges[1].bodyId;
 	b2Body* bodyA = b2BodyArray_Get( &world->bodies, bodyIdA );
 	b2Body* bodyB = b2BodyArray_Get( &world->bodies, bodyIdB );
-	bool staticA = bodyA->type == b2_staticBody;
-	bool staticB = bodyB->type == b2_staticBody;
-	B2_ASSERT( staticA == false || staticB == false );
+
+	b2BodyType typeA = bodyA->type;
+	b2BodyType typeB = bodyB->type;
+	B2_ASSERT( typeA == b2_dynamicBody || typeB == b2_dynamicBody );
 
 #if B2_FORCE_OVERFLOW == 0
-	if ( staticA == false && staticB == false )
+	if (typeA == b2_dynamicBody && typeB == b2_dynamicBody)
 	{
 		// Dynamic constraint colors cannot encroach on colors reserved for static constraints
 		for ( int i = 0; i < B2_DYNAMIC_COLOR_COUNT; ++i )
@@ -100,7 +100,7 @@ void b2AddContactToGraph( b2World* world, b2ContactSim* contactSim, b2Contact* c
 			break;
 		}
 	}
-	else if ( staticA == false )
+	else if ( typeA == b2_dynamicBody )
 	{
 		// Static constraint colors build from the end to get higher priority than dyn-dyn constraints
 		for ( int i = B2_OVERFLOW_INDEX - 1; i >= 1; --i )
@@ -116,7 +116,7 @@ void b2AddContactToGraph( b2World* world, b2ContactSim* contactSim, b2Contact* c
 			break;
 		}
 	}
-	else if ( staticB == false )
+	else if ( typeB == b2_dynamicBody )
 	{
 		// Static constraint colors build from the end to get higher priority than dyn-dyn constraints
 		for ( int i = B2_OVERFLOW_INDEX - 1; i >= 1; --i )
@@ -143,7 +143,7 @@ void b2AddContactToGraph( b2World* world, b2ContactSim* contactSim, b2Contact* c
 
 	// todo perhaps skip this if the contact is already awake
 
-	if ( staticA )
+	if ( typeA == b2_staticBody )
 	{
 		newContact->bodySimIndexA = B2_NULL_INDEX;
 		newContact->invMassA = 0.0f;
@@ -162,7 +162,7 @@ void b2AddContactToGraph( b2World* world, b2ContactSim* contactSim, b2Contact* c
 		newContact->invIA = bodySimA->invInertia;
 	}
 
-	if ( staticB )
+	if ( typeB == b2_staticBody )
 	{
 		newContact->bodySimIndexB = B2_NULL_INDEX;
 		newContact->invMassB = 0.0f;
@@ -191,7 +191,7 @@ void b2RemoveContactFromGraph( b2World* world, int bodyIdA, int bodyIdB, int col
 
 	if ( colorIndex != B2_OVERFLOW_INDEX )
 	{
-		// might clear a bit for a static body, but this has no effect
+		// This might clear a bit for a kinematic or static body, but this has no effect
 		b2ClearBit( &color->bodySet, bodyIdA );
 		b2ClearBit( &color->bodySet, bodyIdB );
 	}
@@ -212,12 +212,12 @@ void b2RemoveContactFromGraph( b2World* world, int bodyIdA, int bodyIdB, int col
 	}
 }
 
-static int b2AssignJointColor( b2ConstraintGraph* graph, int bodyIdA, int bodyIdB, bool staticA, bool staticB )
+static int b2AssignJointColor( b2ConstraintGraph* graph, int bodyIdA, int bodyIdB, b2BodyType typeA, b2BodyType typeB )
 {
-	B2_ASSERT( staticA == false || staticB == false );
+	B2_ASSERT( typeA == b2_dynamicBody || typeB == b2_dynamicBody );
 
 #if B2_FORCE_OVERFLOW == 0
-	if ( staticA == false && staticB == false )
+	if ( typeA == b2_dynamicBody && typeB == b2_dynamicBody )
 	{
 		// Dynamic constraint colors cannot encroach on colors reserved for static constraints
 		for ( int i = 0; i < B2_DYNAMIC_COLOR_COUNT; ++i )
@@ -233,7 +233,7 @@ static int b2AssignJointColor( b2ConstraintGraph* graph, int bodyIdA, int bodyId
 			return i;
 		}
 	}
-	else if ( staticA == false )
+	else if ( typeA == b2_dynamicBody )
 	{
 		// Static constraint colors build from the end to get higher priority than dyn-dyn constraints
 		for ( int i = B2_OVERFLOW_INDEX - 1; i >= 1; --i )
@@ -248,7 +248,7 @@ static int b2AssignJointColor( b2ConstraintGraph* graph, int bodyIdA, int bodyId
 			return i;
 		}
 	}
-	else if ( staticB == false )
+	else if ( typeB == b2_dynamicBody )
 	{
 		// Static constraint colors build from the end to get higher priority than dyn-dyn constraints
 		for ( int i = B2_OVERFLOW_INDEX - 1; i >= 1; --i )
@@ -264,7 +264,7 @@ static int b2AssignJointColor( b2ConstraintGraph* graph, int bodyIdA, int bodyId
 		}
 	}
 #else
-	B2_UNUSED( graph, bodyIdA, bodyIdB, staticA, staticB );
+	B2_UNUSED( graph, bodyIdA, bodyIdB );
 #endif
 
 	return B2_OVERFLOW_INDEX;
@@ -278,10 +278,8 @@ b2JointSim* b2CreateJointInGraph( b2World* world, b2Joint* joint )
 	int bodyIdB = joint->edges[1].bodyId;
 	b2Body* bodyA = b2BodyArray_Get( &world->bodies, bodyIdA );
 	b2Body* bodyB = b2BodyArray_Get( &world->bodies, bodyIdB );
-	bool staticA = bodyA->type == b2_staticBody;
-	bool staticB = bodyB->type == b2_staticBody;
 
-	int colorIndex = b2AssignJointColor( graph, bodyIdA, bodyIdB, staticA, staticB );
+	int colorIndex = b2AssignJointColor( graph, bodyIdA, bodyIdB, bodyA->type, bodyB->type );
 
 	b2JointSim* jointSim = b2JointSimArray_Add( &graph->colors[colorIndex].jointSims );
 	memset( jointSim, 0, sizeof( b2JointSim ) );
@@ -324,3 +322,10 @@ void b2RemoveJointFromGraph( b2World* world, int bodyIdA, int bodyIdB, int color
 		movedJoint->localIndex = localIndex;
 	}
 }
+
+b2HexColor b2_graphColors[B2_GRAPH_COLOR_COUNT] = {
+	b2_colorRed,	b2_colorOrange, b2_colorYellow,	   b2_colorGreen,	  b2_colorCyan,		b2_colorBlue,
+	b2_colorViolet, b2_colorPink,	b2_colorChocolate, b2_colorGoldenRod, b2_colorCoral,	b2_colorRosyBrown,
+	b2_colorAqua,	b2_colorPeru,	b2_colorLime,	   b2_colorGold,	  b2_colorPlum,		b2_colorSnow,
+	b2_colorTeal,	b2_colorKhaki,	b2_colorSalmon,	   b2_colorPeachPuff, b2_colorHoneyDew, b2_colorBlack,
+};

@@ -8,14 +8,12 @@
 #include "body.h"
 #include "core.h"
 #include "joint.h"
+#include "physics_world.h"
 #include "solver.h"
 #include "solver_set.h"
-#include "physics_world.h"
 
 // needed for dll export
 #include "box2d/box2d.h"
-
-#include <stdio.h>
 
 void b2DistanceJoint_SetLength( b2JointId jointId, float length )
 {
@@ -318,10 +316,17 @@ void b2WarmStartDistanceJoint( b2JointSim* base, b2StepContext* context )
 	float axialImpulse = joint->impulse + joint->lowerImpulse - joint->upperImpulse + joint->motorImpulse;
 	b2Vec2 P = b2MulSV( axialImpulse, axis );
 
-	stateA->linearVelocity = b2MulSub( stateA->linearVelocity, mA, P );
-	stateA->angularVelocity -= iA * b2Cross( rA, P );
-	stateB->linearVelocity = b2MulAdd( stateB->linearVelocity, mB, P );
-	stateB->angularVelocity += iB * b2Cross( rB, P );
+	if ( stateA->flags & b2_dynamicFlag )
+	{
+		stateA->linearVelocity = b2MulSub( stateA->linearVelocity, mA, P );
+		stateA->angularVelocity -= iA * b2Cross( rA, P );
+	}
+
+	if ( stateB->flags & b2_dynamicFlag )
+	{
+		stateB->linearVelocity = b2MulAdd( stateB->linearVelocity, mB, P );
+		stateB->angularVelocity += iB * b2Cross( rB, P );
+	}
 }
 
 void b2SolveDistanceJoint( b2JointSim* base, b2StepContext* context, bool useBias )
@@ -377,6 +382,23 @@ void b2SolveDistanceJoint( b2JointSim* base, b2StepContext* context, bool useBia
 			float h = context->h;
 			joint->impulse = b2ClampFloat( joint->impulse + impulse, joint->lowerSpringForce * h, joint->upperSpringForce * h );
 			impulse = joint->impulse - oldImpulse;
+
+			b2Vec2 P = b2MulSV( impulse, axis );
+			vA = b2MulSub( vA, mA, P );
+			wA -= iA * b2Cross( rA, P );
+			vB = b2MulAdd( vB, mB, P );
+			wB += iB * b2Cross( rB, P );
+		}
+
+		if ( joint->enableMotor )
+		{
+			b2Vec2 vr = b2Add( b2Sub( vB, vA ), b2Sub( b2CrossSV( wB, rB ), b2CrossSV( wA, rA ) ) );
+			float Cdot = b2Dot( axis, vr );
+			float impulse = joint->axialMass * ( joint->motorSpeed - Cdot );
+			float oldImpulse = joint->motorImpulse;
+			float maxImpulse = context->h * joint->maxMotorForce;
+			joint->motorImpulse = b2ClampFloat( joint->motorImpulse + impulse, -maxImpulse, maxImpulse );
+			impulse = joint->motorImpulse - oldImpulse;
 
 			b2Vec2 P = b2MulSV( impulse, axis );
 			vA = b2MulSub( vA, mA, P );
@@ -455,23 +477,6 @@ void b2SolveDistanceJoint( b2JointSim* base, b2StepContext* context, bool useBia
 				wB += iB * b2Cross( rB, P );
 			}
 		}
-
-		if ( joint->enableMotor )
-		{
-			b2Vec2 vr = b2Add( b2Sub( vB, vA ), b2Sub( b2CrossSV( wB, rB ), b2CrossSV( wA, rA ) ) );
-			float Cdot = b2Dot( axis, vr );
-			float impulse = joint->axialMass * ( joint->motorSpeed - Cdot );
-			float oldImpulse = joint->motorImpulse;
-			float maxImpulse = context->h * joint->maxMotorForce;
-			joint->motorImpulse = b2ClampFloat( joint->motorImpulse + impulse, -maxImpulse, maxImpulse );
-			impulse = joint->motorImpulse - oldImpulse;
-
-			b2Vec2 P = b2MulSV( impulse, axis );
-			vA = b2MulSub( vA, mA, P );
-			wA -= iA * b2Cross( rA, P );
-			vB = b2MulAdd( vB, mB, P );
-			wB += iB * b2Cross( rB, P );
-		}
 	}
 	else
 	{
@@ -501,10 +506,17 @@ void b2SolveDistanceJoint( b2JointSim* base, b2StepContext* context, bool useBia
 		wB += iB * b2Cross( rB, P );
 	}
 
-	stateA->linearVelocity = vA;
-	stateA->angularVelocity = wA;
-	stateB->linearVelocity = vB;
-	stateB->angularVelocity = wB;
+	if ( stateA->flags & b2_dynamicFlag )
+	{
+		stateA->linearVelocity = vA;
+		stateA->angularVelocity = wA;
+	}
+
+	if ( stateB->flags & b2_dynamicFlag )
+	{
+		stateB->linearVelocity = vB;
+		stateB->angularVelocity = wB;
+	}
 }
 
 #if 0
@@ -548,22 +560,22 @@ void b2DrawDistanceJoint( b2DebugDraw* draw, b2JointSim* base, b2Transform trans
 		if ( joint->minLength > B2_LINEAR_SLOP )
 		{
 			// draw->DrawPoint(pMin, 4.0f, c2, draw->context);
-			draw->DrawSegmentFcn( b2Sub( pMin, offset ), b2Add( pMin, offset ), b2_colorLightGreen, draw->context );
+			draw->DrawLineFcn( b2Sub( pMin, offset ), b2Add( pMin, offset ), b2_colorLightGreen, draw->context );
 		}
 
 		if ( joint->maxLength < B2_HUGE )
 		{
 			// draw->DrawPoint(pMax, 4.0f, c3, draw->context);
-			draw->DrawSegmentFcn( b2Sub( pMax, offset ), b2Add( pMax, offset ), b2_colorRed, draw->context );
+			draw->DrawLineFcn( b2Sub( pMax, offset ), b2Add( pMax, offset ), b2_colorRed, draw->context );
 		}
 
 		if ( joint->minLength > B2_LINEAR_SLOP && joint->maxLength < B2_HUGE )
 		{
-			draw->DrawSegmentFcn( pMin, pMax, b2_colorGray, draw->context );
+			draw->DrawLineFcn( pMin, pMax, b2_colorGray, draw->context );
 		}
 	}
 
-	draw->DrawSegmentFcn( pA, pB, b2_colorWhite, draw->context );
+	draw->DrawLineFcn( pA, pB, b2_colorWhite, draw->context );
 	draw->DrawPointFcn( pA, 4.0f, b2_colorWhite, draw->context );
 	draw->DrawPointFcn( pB, 4.0f, b2_colorWhite, draw->context );
 

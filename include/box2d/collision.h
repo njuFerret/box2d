@@ -530,6 +530,8 @@ typedef struct b2ManifoldPoint
 
 	/// The total normal impulse applied across sub-stepping and restitution. This is important
 	/// to identify speculative contact points that had an interaction in the time step.
+	/// This includes the warm starting impulse, the sub-step delta impulse, and the restitution
+	/// impulse.
 	float totalNormalImpulse;
 
 	/// Relative normal velocity pre-solve. Used for hit events. If the normal impulse is
@@ -706,6 +708,12 @@ typedef bool b2TreeQueryCallbackFcn( int proxyId, uint64_t userData, void* conte
 ///	@return performance data
 B2_API b2TreeStats b2DynamicTree_Query( const b2DynamicTree* tree, b2AABB aabb, uint64_t maskBits,
 										b2TreeQueryCallbackFcn* callback, void* context );
+
+/// Query an AABB for overlapping proxies. The callback class is called for each proxy that overlaps the supplied AABB.
+/// No filtering is performed.
+///	@return performance data
+B2_API b2TreeStats b2DynamicTree_QueryAll( const b2DynamicTree* tree, b2AABB aabb, b2TreeQueryCallbackFcn* callback,
+										   void* context );
 
 /// This function receives clipped ray cast input for a proxy. The function
 /// returns the new ray fraction.

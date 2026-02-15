@@ -174,7 +174,7 @@ void b2WarmStartOverflowContacts( b2StepContext* context )
 
 	for ( int i = 0; i < contactCount; ++i )
 	{
-		const b2ContactConstraint* constraint = constraints + i;
+		b2ContactConstraint* constraint = constraints + i;
 
 		int indexA = constraint->indexA;
 		int indexB = constraint->indexB;
@@ -199,13 +199,16 @@ void b2WarmStartOverflowContacts( b2StepContext* context )
 
 		for ( int j = 0; j < pointCount; ++j )
 		{
-			const b2ContactConstraintPoint* cp = constraint->points + j;
+			b2ContactConstraintPoint* cp = constraint->points + j;
 
 			// fixed anchors
 			b2Vec2 rA = cp->anchorA;
 			b2Vec2 rB = cp->anchorB;
 
 			b2Vec2 P = b2Add( b2MulSV( cp->normalImpulse, normal ), b2MulSV( cp->tangentImpulse, tangent ) );
+
+			cp->totalNormalImpulse += cp->normalImpulse;
+
 			wA -= iA * b2Cross( rA, P );
 			vA = b2MulAdd( vA, -mA, P );
 			wB += iB * b2Cross( rB, P );
@@ -215,10 +218,17 @@ void b2WarmStartOverflowContacts( b2StepContext* context )
 		wA -= iA * constraint->rollingImpulse;
 		wB += iB * constraint->rollingImpulse;
 
-		stateA->linearVelocity = vA;
-		stateA->angularVelocity = wA;
-		stateB->linearVelocity = vB;
-		stateB->angularVelocity = wB;
+		if ( stateA->flags & b2_dynamicFlag )
+		{
+			stateA->linearVelocity = vA;
+			stateA->angularVelocity = wA;
+		}
+
+		if ( stateB->flags & b2_dynamicFlag )
+		{
+			stateB->linearVelocity = vB;
+			stateB->angularVelocity = wB;
+		}
 	}
 
 	b2TracyCZoneEnd( warmstart_overflow_contact );
@@ -311,7 +321,9 @@ void b2SolveOverflowContacts( b2StepContext* context, bool useBias )
 			float newImpulse = b2MaxFloat( cp->normalImpulse + impulse, 0.0f );
 			impulse = newImpulse - cp->normalImpulse;
 			cp->normalImpulse = newImpulse;
-			cp->totalNormalImpulse += newImpulse;
+			cp->totalNormalImpulse += impulse;
+
+			// b2Log( "vn %g impulse %g bias %g", vn, newImpulse, velocityBias );
 
 			totalNormalImpulse += newImpulse;
 
@@ -371,10 +383,17 @@ void b2SolveOverflowContacts( b2StepContext* context, bool useBias )
 			wB += iB * deltaLambda;
 		}
 
-		stateA->linearVelocity = vA;
-		stateA->angularVelocity = wA;
-		stateB->linearVelocity = vB;
-		stateB->angularVelocity = wB;
+		if ( stateA->flags & b2_dynamicFlag )
+		{
+			stateA->linearVelocity = vA;
+			stateA->angularVelocity = wA;
+		}
+
+		if ( stateB->flags & b2_dynamicFlag )
+		{
+			stateB->linearVelocity = vB;
+			stateB->angularVelocity = wB;
+		}
 	}
 
 	b2TracyCZoneEnd( solve_contact );
@@ -469,10 +488,17 @@ void b2ApplyOverflowRestitution( b2StepContext* context )
 			}
 		}
 
-		stateA->linearVelocity = vA;
-		stateA->angularVelocity = wA;
-		stateB->linearVelocity = vB;
-		stateB->angularVelocity = wB;
+		if ( stateA->flags & b2_dynamicFlag )
+		{
+			stateA->linearVelocity = vA;
+			stateA->angularVelocity = wA;
+		}
+
+		if ( stateB->flags & b2_dynamicFlag )
+		{
+			stateB->linearVelocity = vB;
+			stateB->angularVelocity = wB;
+		}
 	}
 
 	b2TracyCZoneEnd( overflow_resitution );
@@ -1153,21 +1179,21 @@ static void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT i
 	// associated cache flushing.
 	// todo could add a check for kinematic bodies here
 
-	if ( indices[0] != B2_NULL_INDEX )
+	if ( indices[0] != B2_NULL_INDEX && ( states[indices[0]].flags & b2_dynamicFlag ) != 0 )
 		_mm256_store_ps( (float*)( states + indices[0] ), _mm256_permute2f128_ps( tt0, tt4, 0x20 ) );
-	if ( indices[1] != B2_NULL_INDEX )
+	if ( indices[1] != B2_NULL_INDEX && ( states[indices[1]].flags & b2_dynamicFlag ) != 0 )
 		_mm256_store_ps( (float*)( states + indices[1] ), _mm256_permute2f128_ps( tt1, tt5, 0x20 ) );
-	if ( indices[2] != B2_NULL_INDEX )
+	if ( indices[2] != B2_NULL_INDEX && ( states[indices[2]].flags & b2_dynamicFlag ) != 0 )
 		_mm256_store_ps( (float*)( states + indices[2] ), _mm256_permute2f128_ps( tt2, tt6, 0x20 ) );
-	if ( indices[3] != B2_NULL_INDEX )
+	if ( indices[3] != B2_NULL_INDEX && ( states[indices[3]].flags & b2_dynamicFlag ) != 0 )
 		_mm256_store_ps( (float*)( states + indices[3] ), _mm256_permute2f128_ps( tt3, tt7, 0x20 ) );
-	if ( indices[4] != B2_NULL_INDEX )
+	if ( indices[4] != B2_NULL_INDEX && ( states[indices[4]].flags & b2_dynamicFlag ) != 0 )
 		_mm256_store_ps( (float*)( states + indices[4] ), _mm256_permute2f128_ps( tt0, tt4, 0x31 ) );
-	if ( indices[5] != B2_NULL_INDEX )
+	if ( indices[5] != B2_NULL_INDEX && ( states[indices[5]].flags & b2_dynamicFlag ) != 0 )
 		_mm256_store_ps( (float*)( states + indices[5] ), _mm256_permute2f128_ps( tt1, tt5, 0x31 ) );
-	if ( indices[6] != B2_NULL_INDEX )
+	if ( indices[6] != B2_NULL_INDEX && ( states[indices[6]].flags & b2_dynamicFlag ) != 0 )
 		_mm256_store_ps( (float*)( states + indices[6] ), _mm256_permute2f128_ps( tt2, tt6, 0x31 ) );
-	if ( indices[7] != B2_NULL_INDEX )
+	if ( indices[7] != B2_NULL_INDEX && ( states[indices[7]].flags & b2_dynamicFlag ) != 0 )
 		_mm256_store_ps( (float*)( states + indices[7] ), _mm256_permute2f128_ps( tt3, tt7, 0x31 ) );
 }
 
@@ -1252,25 +1278,25 @@ static void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT i
 
 	// I don't use any dummy body in the body array because this will lead to multithreaded sharing and the
 	// associated cache flushing.
-	if ( indices[0] != B2_NULL_INDEX )
+	if ( indices[0] != B2_NULL_INDEX && ( states[indices[0]].flags & b2_dynamicFlag ) != 0 )
 	{
 		float32x4_t body1 = vcombine_f32( vget_low_f32( r1.val[0] ), vget_low_f32( r2.val[0] ) );
 		b2StoreW( (float*)( states + indices[0] ), body1 );
 	}
 
-	if ( indices[1] != B2_NULL_INDEX )
+	if ( indices[1] != B2_NULL_INDEX && ( states[indices[1]].flags & b2_dynamicFlag ) != 0 )
 	{
 		float32x4_t body2 = vcombine_f32( vget_low_f32( r1.val[1] ), vget_low_f32( r2.val[1] ) );
 		b2StoreW( (float*)( states + indices[1] ), body2 );
 	}
 
-	if ( indices[2] != B2_NULL_INDEX )
+	if ( indices[2] != B2_NULL_INDEX && ( states[indices[2]].flags & b2_dynamicFlag ) != 0 )
 	{
 		float32x4_t body3 = vcombine_f32( vget_high_f32( r1.val[0] ), vget_high_f32( r2.val[0] ) );
 		b2StoreW( (float*)( states + indices[2] ), body3 );
 	}
 
-	if ( indices[3] != B2_NULL_INDEX )
+	if ( indices[3] != B2_NULL_INDEX && ( states[indices[3]].flags & b2_dynamicFlag ) != 0 )
 	{
 		float32x4_t body4 = vcombine_f32( vget_high_f32( r1.val[1] ), vget_high_f32( r2.val[1] ) );
 		b2StoreW( (float*)( states + indices[3] ), body4 );
@@ -1346,8 +1372,37 @@ static void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT i
 	// [w3 f3 w4 f4]
 	b2FloatW t4 = b2UnpackHiW( simdBody->w, simdBody->flags );
 
-	// I don't use any dummy body in the body array because this will lead to multithreaded sharing and the
-	// associated cache flushing.
+#if 1
+
+	// I don't use any dummy body in the body array because this will lead to multithreaded cache coherence problems.
+	if ( indices[0] != B2_NULL_INDEX && ( states[indices[0]].flags & b2_dynamicFlag ) != 0 )
+	{
+		// [t1.x t1.y t3.x t3.y]
+		b2StoreW( (float*)( states + indices[0] ), _mm_shuffle_ps( t1, t3, _MM_SHUFFLE( 1, 0, 1, 0 ) ) );
+	}
+
+	if ( indices[1] != B2_NULL_INDEX && ( states[indices[1]].flags & b2_dynamicFlag ) != 0 )
+	{
+		// [t1.z t1.w t3.z t3.w]
+		b2StoreW( (float*)( states + indices[1] ), _mm_shuffle_ps( t1, t3, _MM_SHUFFLE( 3, 2, 3, 2 ) ) );
+	}
+
+	if ( indices[2] != B2_NULL_INDEX && ( states[indices[2]].flags & b2_dynamicFlag ) != 0 )
+	{
+		// [t2.x t2.y t4.x t4.y]
+		b2StoreW( (float*)( states + indices[2] ), _mm_shuffle_ps( t2, t4, _MM_SHUFFLE( 1, 0, 1, 0 ) ) );
+	}
+
+	if ( indices[3] != B2_NULL_INDEX && ( states[indices[3]].flags & b2_dynamicFlag ) != 0 )
+	{
+		// [t2.z t2.w t4.z t4.w]
+		b2StoreW( (float*)( states + indices[3] ), _mm_shuffle_ps( t2, t4, _MM_SHUFFLE( 3, 2, 3, 2 ) ) );
+	}
+
+#else
+
+	// todo_erin this is here to test the impact of unsafe writes
+
 	if ( indices[0] != B2_NULL_INDEX )
 	{
 		// [t1.x t1.y t3.x t3.y]
@@ -1360,7 +1415,7 @@ static void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT i
 		b2StoreW( (float*)( states + indices[1] ), _mm_shuffle_ps( t1, t3, _MM_SHUFFLE( 3, 2, 3, 2 ) ) );
 	}
 
-	if ( indices[2] != B2_NULL_INDEX )
+	if ( indices[2] != B2_NULL_INDEX)
 	{
 		// [t2.x t2.y t4.x t4.y]
 		b2StoreW( (float*)( states + indices[2] ), _mm_shuffle_ps( t2, t4, _MM_SHUFFLE( 1, 0, 1, 0 ) ) );
@@ -1371,6 +1426,8 @@ static void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT i
 		// [t2.z t2.w t4.z t4.w]
 		b2StoreW( (float*)( states + indices[3] ), _mm_shuffle_ps( t2, t4, _MM_SHUFFLE( 3, 2, 3, 2 ) ) );
 	}
+
+#endif
 }
 
 #else
@@ -1401,9 +1458,7 @@ static b2BodyStateW b2GatherBodies( const b2BodyState* B2_RESTRICT states, int* 
 // This writes only the velocities back to the solver bodies
 static void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT indices, const b2BodyStateW* B2_RESTRICT simdBody )
 {
-	// todo somehow skip writing to kinematic bodies
-
-	if ( indices[0] != B2_NULL_INDEX )
+	if ( indices[0] != B2_NULL_INDEX && ( states[indices[0]].flags & b2_dynamicFlag ) != 0 )
 	{
 		b2BodyState* state = states + indices[0];
 		state->linearVelocity.x = simdBody->v.X.x;
@@ -1411,7 +1466,7 @@ static void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT i
 		state->angularVelocity = simdBody->w.x;
 	}
 
-	if ( indices[1] != B2_NULL_INDEX )
+	if ( indices[1] != B2_NULL_INDEX && ( states[indices[1]].flags & b2_dynamicFlag ) != 0 )
 	{
 		b2BodyState* state = states + indices[1];
 		state->linearVelocity.x = simdBody->v.X.y;
@@ -1419,7 +1474,7 @@ static void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT i
 		state->angularVelocity = simdBody->w.y;
 	}
 
-	if ( indices[2] != B2_NULL_INDEX )
+	if ( indices[2] != B2_NULL_INDEX && ( states[indices[2]].flags & b2_dynamicFlag ) != 0 )
 	{
 		b2BodyState* state = states + indices[2];
 		state->linearVelocity.x = simdBody->v.X.z;
@@ -1427,7 +1482,7 @@ static void b2ScatterBodies( b2BodyState* B2_RESTRICT states, int* B2_RESTRICT i
 		state->angularVelocity = simdBody->w.z;
 	}
 
-	if ( indices[3] != B2_NULL_INDEX )
+	if ( indices[3] != B2_NULL_INDEX && ( states[indices[3]].flags & b2_dynamicFlag ) != 0 )
 	{
 		b2BodyState* state = states + indices[3];
 		state->linearVelocity.x = simdBody->v.X.w;
@@ -1452,6 +1507,7 @@ void b2PrepareContactsTask( int startIndex, int endIndex, b2StepContext* context
 	// Stiffer for static contacts to avoid bodies getting pushed through the ground
 	b2Softness contactSoftness = context->contactSoftness;
 	b2Softness staticSoftness = context->staticSoftness;
+	bool enableSoftening = world->enableContactSoftening;
 
 	float warmStartScale = world->enableWarmStarting ? 1.0f : 0.0f;
 
@@ -1514,7 +1570,26 @@ void b2PrepareContactsTask( int startIndex, int endIndex, b2StepContext* context
 					( (float*)&constraint->rollingMass )[j] = k > 0.0f ? 1.0f / k : 0.0f;
 				}
 
-				b2Softness soft = ( indexA == B2_NULL_INDEX || indexB == B2_NULL_INDEX ) ? staticSoftness : contactSoftness;
+				b2Softness soft = contactSoftness;
+				if (indexA == B2_NULL_INDEX || indexB == B2_NULL_INDEX)
+				{
+					soft = staticSoftness;
+				}
+				else if (enableSoftening)
+				{
+					// todo experimental feature
+					float contactHertz = b2MinFloat( world->contactHertz, 0.125f * context->inv_h );
+					float ratio = 1.0f;
+					if ( mA < mB )
+					{
+						ratio = b2MaxFloat( 0.5f, mA / mB );
+					}
+					else if ( mB < mA )
+					{
+						ratio = b2MaxFloat( 0.5f, mB / mA );
+					}
+					soft = b2MakeSoft( ratio * contactHertz, ratio * world->contactDampingRatio, context->h );
+				}
 
 				b2Vec2 normal = manifold->normal;
 				( (float*)&constraint->normal.X )[j] = normal.x;
@@ -1701,6 +1776,8 @@ void b2WarmStartContactsTask( int startIndex, int endIndex, b2StepContext* conte
 			bB.w = b2MulAddW( bB.w, c->invIB, b2CrossW( rB, P ) );
 			bB.v.X = b2MulAddW( bB.v.X, c->invMassB, P.X );
 			bB.v.Y = b2MulAddW( bB.v.Y, c->invMassB, P.Y );
+
+			c->totalNormalImpulse1 = b2AddW( c->totalNormalImpulse1, c->normalImpulse1 );
 		}
 
 		{
@@ -1717,6 +1794,8 @@ void b2WarmStartContactsTask( int startIndex, int endIndex, b2StepContext* conte
 			bB.w = b2MulAddW( bB.w, c->invIB, b2CrossW( rB, P ) );
 			bB.v.X = b2MulAddW( bB.v.X, c->invMassB, P.X );
 			bB.v.Y = b2MulAddW( bB.v.Y, c->invMassB, P.Y );
+
+			c->totalNormalImpulse2 = b2AddW( c->totalNormalImpulse2, c->normalImpulse2 );
 		}
 
 		bA.w = b2MulSubW( bA.w, c->invIA, c->rollingImpulse );
@@ -1804,7 +1883,7 @@ void b2SolveContactsTask( int startIndex, int endIndex, b2StepContext* context, 
 			b2FloatW newImpulse = b2MaxW( b2SubW( c->normalImpulse1, negImpulse ), b2ZeroW() );
 			b2FloatW impulse = b2SubW( newImpulse, c->normalImpulse1 );
 			c->normalImpulse1 = newImpulse;
-			c->totalNormalImpulse1 = b2AddW( c->totalNormalImpulse1, newImpulse );
+			c->totalNormalImpulse1 = b2AddW( c->totalNormalImpulse1, impulse );
 
 			totalNormalImpulse = b2AddW( totalNormalImpulse, newImpulse );
 
@@ -1849,14 +1928,14 @@ void b2SolveContactsTask( int startIndex, int endIndex, b2StepContext* context, 
 			b2FloatW vn = b2AddW( b2MulW( dvx, c->normal.X ), b2MulW( dvy, c->normal.Y ) );
 
 			// Compute normal impulse
-			b2FloatW negImpulse = b2AddW( b2MulW( c->normalMass2, b2MulW( pointMassScale, b2AddW( vn, bias ) ) ),
+			b2FloatW negImpulse = b2AddW( b2MulW( c->normalMass2, b2AddW( b2MulW( pointMassScale, vn ), bias ) ),
 										  b2MulW( pointImpulseScale, c->normalImpulse2 ) );
 
 			// Clamp the accumulated impulse
 			b2FloatW newImpulse = b2MaxW( b2SubW( c->normalImpulse2, negImpulse ), b2ZeroW() );
 			b2FloatW impulse = b2SubW( newImpulse, c->normalImpulse2 );
 			c->normalImpulse2 = newImpulse;
-			c->totalNormalImpulse2 = b2AddW( c->totalNormalImpulse2, newImpulse );
+			c->totalNormalImpulse2 = b2AddW( c->totalNormalImpulse2, impulse );
 
 			totalNormalImpulse = b2AddW( totalNormalImpulse, newImpulse );
 
@@ -2020,7 +2099,6 @@ void b2ApplyRestitutionTask( int startIndex, int endIndex, b2StepContext* contex
 			b2FloatW deltaImpulse = b2SubW( newImpulse, c->normalImpulse1 );
 			c->normalImpulse1 = newImpulse;
 
-			// Add the incremental impulse rather than the full impulse because this is not a sub-step
 			c->totalNormalImpulse1 = b2AddW( c->totalNormalImpulse1, deltaImpulse );
 
 			// Apply contact impulse
@@ -2061,7 +2139,6 @@ void b2ApplyRestitutionTask( int startIndex, int endIndex, b2StepContext* contex
 			b2FloatW deltaImpulse = b2SubW( newImpulse, c->normalImpulse2 );
 			c->normalImpulse2 = newImpulse;
 
-			// Add the incremental impulse rather than the full impulse because this is not a sub-step
 			c->totalNormalImpulse2 = b2AddW( c->totalNormalImpulse2, deltaImpulse );
 
 			// Apply contact impulse

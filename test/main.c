@@ -22,6 +22,7 @@ extern int BitSetTest( void );
 extern int CollisionTest( void );
 extern int DeterminismTest( void );
 extern int DistanceTest( void );
+extern int DynamicTreeTest( void );
 extern int IdTest( void );
 extern int MathTest( void );
 extern int ShapeTest( void );
@@ -50,14 +51,15 @@ int main( void )
 	printf( "Starting Box2D unit tests\n" );
 	printf( "======================================\n" );
 
+	RUN_TEST( TableTest );
 	RUN_TEST( MathTest );
 	RUN_TEST( BitSetTest );
 	RUN_TEST( CollisionTest );
 	RUN_TEST( DeterminismTest );
 	RUN_TEST( DistanceTest );
+	RUN_TEST( DynamicTreeTest );
 	RUN_TEST( IdTest );
 	RUN_TEST( ShapeTest );
-	RUN_TEST( TableTest );
 	RUN_TEST( WorldTest );
 
 	printf( "======================================\n" );

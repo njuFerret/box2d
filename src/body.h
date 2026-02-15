@@ -8,6 +8,9 @@
 #include "box2d/math_functions.h"
 #include "box2d/types.h"
 
+// Length of body debug name
+#define B2_NAME_LENGTH 32
+
 typedef struct b2World b2World;
 
 enum b2BodyFlags
@@ -39,6 +42,16 @@ enum b2BodyFlags
 	// This body need's to have its AABB increased
 	b2_enlargeBounds = 0x00000100,
 
+	// This body is dynamic so the solver should write to it.
+	// This prevents writing to kinematic bodies that causes a multithreaded sharing
+	// cache coherence problem even when the values are not changing.
+	// Used for b2BodyState flags.
+	b2_dynamicFlag = 0x00000200,
+
+	// Flag to indicate the user has used the updateBodyMass option to defer mass
+	// computation but b2Body_ApplyMassFromShapes was not called before the world step.
+	b2_dirtyMass = 0x00000400,
+
 	// All lock flags
 	b2_allLocks = b2_lockAngularZ | b2_lockLinearX | b2_lockLinearY,
 };
@@ -46,7 +59,7 @@ enum b2BodyFlags
 // Body organizational details that are not used in the solver.
 typedef struct b2Body
 {
-	char name[32];
+	char name[B2_NAME_LENGTH];
 
 	void* userData;
 
@@ -103,7 +116,6 @@ typedef struct b2Body
 
 	// todo move into flags
 	bool enableSleep;
-	bool isMarked;
 } b2Body;
 
 // Body State
@@ -139,6 +151,7 @@ typedef struct b2BodyState
 	float angularVelocity; // 4
 
 	// b2BodyFlags
+	// Important flags: locking, dynamic
 	uint32_t flags; // 4
 
 	// Using delta position reduces round-off error far from the origin

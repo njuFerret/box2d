@@ -12,14 +12,6 @@
 
 #include "box2d/types.h"
 
-enum b2SetType
-{
-	b2_staticSet = 0,
-	b2_disabledSet = 1,
-	b2_awakeSet = 2,
-	b2_firstSleepingSet = 3,
-};
-
 // Per thread task storage
 typedef struct b2TaskContext
 {
@@ -174,7 +166,11 @@ typedef struct b2World
 	void* userData;
 
 	// Remember type step used for reporting forces and torques
+	// inverse sub-step
 	float inv_h;
+
+	// inverse full-step
+	float inv_dt;
 
 	int activeTaskCount;
 	int taskCount;
@@ -184,6 +180,7 @@ typedef struct b2World
 	bool enableSleep;
 	bool locked;
 	bool enableWarmStarting;
+	bool enableContactSoftening;
 	bool enableContinuous;
 	bool enableSpeculative;
 	bool inUse;

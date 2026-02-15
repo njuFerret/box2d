@@ -53,13 +53,13 @@ typedef void b2FinishTaskCallback( void* userTask, void* userContext );
 /// from a worker thread.
 /// @warning This function should not attempt to modify Box2D state or user application state.
 /// @ingroup world
-typedef float b2FrictionCallback( float frictionA, int userMaterialIdA, float frictionB, int userMaterialIdB );
+typedef float b2FrictionCallback( float frictionA, uint64_t userMaterialIdA, float frictionB, uint64_t userMaterialIdB );
 
 /// Optional restitution mixing callback. This intentionally provides no context objects because this is called
 /// from a worker thread.
 /// @warning This function should not attempt to modify Box2D state or user application state.
 /// @ingroup world
-typedef float b2RestitutionCallback( float restitutionA, int userMaterialIdA, float restitutionB, int userMaterialIdB );
+typedef float b2RestitutionCallback( float restitutionA, uint64_t userMaterialIdA, float restitutionB, uint64_t userMaterialIdB );
 
 /// Result from b2World_RayCastClosest
 /// If there is initial overlap the fraction and normal will be zero while the point is an arbitrary point in the overlap region.
@@ -116,6 +116,9 @@ typedef struct b2WorldDef
 
 	/// Enable continuous collision
 	bool enableContinuous;
+
+	/// Contact softening when mass ratios are large. Experimental.
+	bool enableContactSoftening;
 
 	/// Number of workers to use with the provided task system. Box2D performs best when using only
 	/// performance cores and accessing a single L2 cache. Efficiency cores and hyper-threading provide
@@ -236,10 +239,20 @@ typedef struct b2BodyDef
 	/// Is this body initially awake or sleeping?
 	bool isAwake;
 
-	/// Treat this body as high speed object that performs continuous collision detection
+	/// Treat this body as a high speed object that performs continuous collision detection
 	/// against dynamic and kinematic bodies, but not other bullet bodies.
 	/// @warning Bullets should be used sparingly. They are not a solution for general dynamic-versus-dynamic
-	/// continuous collision.
+	/// continuous collision. They do not guarantee accurate collision if both bodies are fast moving because
+	/// the bullet does a continuous check after all non-bullet bodies have moved. You could get unlucky and have
+	/// the bullet body end a time step very close to a non-bullet body and the non-bullet body then moves over
+	/// the bullet body. In continuous collision, initial overlap is ignored to avoid freezing bodies in place.
+	/// I do not recommend using them for game projectiles if precise collision timing is needed. Instead consider
+	/// using a ray or shape cast. You can use a marching ray or shape cast for projectile that moves over time.
+	/// If you want a fast moving projectile to collide with a fast moving target, you need to consider the relative
+	/// movement in your ray or shape cast. This is out of the scope of Box2D.
+	/// So what are good use cases for bullets? Pinball games or games with dynamic containers that hold other objects.
+	/// It should be a use case where it doesn't break the game if there is a collision missed, but the having them
+	/// captured improves the quality of the game.
 	bool isBullet;
 
 	/// Used to disable a body. A disabled body does not move or collide.
@@ -358,7 +371,7 @@ typedef struct b2SurfaceMaterial
 
 	/// User material identifier. This is passed with query results and to friction and restitution
 	/// combining functions. It is not used internally.
-	int userMaterialId;
+	uint64_t userMaterialId;
 
 	/// Custom debug draw color.
 	uint32_t customColor;
@@ -418,6 +431,7 @@ typedef struct b2ShapeDef
 	bool invokeContactCreation;
 
 	/// Should the body update the mass properties when this shape is created. Default is true.
+	/// Warning: if this is true, you MUST call b2Body_ApplyMassFromShapes before simulating the world.
 	bool updateBodyMass;
 
 	/// Used internally to detect a valid definition. DO NOT SET.
@@ -458,7 +472,8 @@ typedef struct b2ChainDef
 	const b2SurfaceMaterial* materials;
 
 	/// The material count. Must be 1 or count. This allows you to provide one
-	/// material for all segments or a unique material per segment.
+	/// material for all segments or a unique material per segment. For open
+	/// chains, the material on the ghost segments are place holders.
 	int materialCount;
 
 	/// Contact filtering data.
@@ -534,7 +549,6 @@ typedef enum b2JointType
 	b2_distanceJoint,
 	b2_filterJoint,
 	b2_motorJoint,
-	b2_mouseJoint,
 	b2_prismaticJoint,
 	b2_revoluteJoint,
 	b2_weldJoint,
@@ -613,10 +627,10 @@ typedef struct b2DistanceJointDef
 	/// Enable/disable the joint limit
 	bool enableLimit;
 
-	/// Minimum length. Clamped to a stable minimum value.
+	/// Minimum length for limit. Clamped to a stable minimum value.
 	float minLength;
 
-	/// Maximum length. Must be greater than or equal to the minimum length.
+	/// Maximum length for limit. Must be greater than or equal to the minimum length.
 	float maxLength;
 
 	/// Enable/disable the joint motor
@@ -674,9 +688,6 @@ typedef struct b2MotorJointDef
 	/// Maximum spring torque in newton-meters
 	float maxSpringTorque;
 
-	/// The desired relative transform. Body B relative to bodyA.
-	b2Transform relativeTransform;
-
 	/// Used internally to detect a valid definition. DO NOT SET.
 	int internalValue;
 } b2MotorJointDef;
@@ -684,33 +695,6 @@ typedef struct b2MotorJointDef
 /// Use this to initialize your joint definition
 /// @ingroup motor_joint
 B2_API b2MotorJointDef b2DefaultMotorJointDef( void );
-
-/// A mouse joint is used to make a point on body B track a point on body A.
-/// You may move local frame A to change the target point.
-/// This a soft constraint and allows the constraint to stretch without
-/// applying huge forces. This also applies rotation constraint heuristic to improve control.
-/// @ingroup mouse_joint
-typedef struct b2MouseJointDef
-{
-	/// Base joint definition
-	b2JointDef base;
-
-	/// Stiffness in hertz
-	float hertz;
-
-	/// Damping ratio, non-dimensional
-	float dampingRatio;
-
-	/// Maximum force, typically in newtons
-	float maxForce;
-
-	/// Used internally to detect a valid definition. DO NOT SET.
-	int internalValue;
-} b2MouseJointDef;
-
-/// Use this to initialize your joint definition
-/// @ingroup mouse_joint
-B2_API b2MouseJointDef b2DefaultMouseJointDef( void );
 
 /// A filter joint is used to disable collision between two specific bodies.
 ///
@@ -773,7 +757,7 @@ typedef struct b2PrismaticJointDef
 } b2PrismaticJointDef;
 
 /// Use this to initialize your joint definition
-/// @ingroupd prismatic_joint
+/// @ingroup prismatic_joint
 B2_API b2PrismaticJointDef b2DefaultPrismaticJointDef( void );
 
 /// Revolute joint definition
@@ -1032,6 +1016,11 @@ typedef struct b2ContactHitEvent
 
 	/// Id of the second shape
 	b2ShapeId shapeIdB;
+
+	/// Id of the contact.
+	///	@warning this contact may have been destroyed
+	///	@see b2Contact_IsValid
+	b2ContactId contactId;
 
 	/// Point where the shapes hit at the beginning of the time step.
 	/// This is a mid-point between the two surfaces. It could be at speculative
@@ -1369,7 +1358,7 @@ typedef struct b2DebugDraw
 	void ( *DrawSolidCapsuleFcn )( b2Vec2 p1, b2Vec2 p2, float radius, b2HexColor color, void* context );
 
 	/// Draw a line segment.
-	void ( *DrawSegmentFcn )( b2Vec2 p1, b2Vec2 p2, b2HexColor color, void* context );
+	void ( *DrawLineFcn )( b2Vec2 p1, b2Vec2 p2, b2HexColor color, void* context );
 
 	/// Draw a transform. Choose your own length scale.
 	void ( *DrawTransformFcn )( b2Transform transform, void* context );
@@ -1380,8 +1369,14 @@ typedef struct b2DebugDraw
 	/// Draw a string in world space
 	void ( *DrawStringFcn )( b2Vec2 p, const char* s, b2HexColor color, void* context );
 
-	/// Bounds to use if restricting drawing to a rectangular region
+	/// World bounds to use for debug draw
 	b2AABB drawingBounds;
+
+	/// Scale to use when drawing forces
+	float forceScale;
+
+	/// Global scaling for joint drawing
+	float jointScale;
 
 	/// Option to draw shapes
 	bool drawShapes;
@@ -1402,22 +1397,22 @@ typedef struct b2DebugDraw
 	bool drawBodyNames;
 
 	/// Option to draw contact points
-	bool drawContacts;
+	bool drawContactPoints;
 
 	/// Option to visualize the graph coloring used for contacts and joints
 	bool drawGraphColors;
 
-	/// Option to draw contact normals
-	bool drawContactNormals;
-
-	/// Option to draw contact normal impulses
-	bool drawContactImpulses;
-
 	/// Option to draw contact feature ids
 	bool drawContactFeatures;
 
-	/// Option to draw contact friction impulses
-	bool drawFrictionImpulses;
+	/// Option to draw contact normals
+	bool drawContactNormals;
+
+	/// Option to draw contact normal forces
+	bool drawContactForces;
+
+	/// Option to draw contact friction forces
+	bool drawFrictionForces;
 
 	/// Option to draw islands as bounding boxes
 	bool drawIslands;
